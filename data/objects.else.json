@@ -1,0 +1,607 @@
+{
+  "registry_version": "0.1",
+  "sources": [
+    {"name": "else", "version": null}
+  ],
+  "objects": [
+    {
+      "key": "else/svf~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "q"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "lowpass"},
+        {"domain": "signal", "name": "highpass"},
+        {"domain": "signal", "name": "bandpass"},
+        {"domain": "signal", "name": "notch"}
+      ]
+    },
+    {
+      "key": "else/sine~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/saw~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/square~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "duty"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/tri~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/impulse~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/imp~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/pulse~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "width"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/adsr~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "control", "name": "gate"},
+        {"domain": "control", "name": "attack"},
+        {"domain": "control", "name": "decay"},
+        {"domain": "control", "name": "sustain"},
+        {"domain": "control", "name": "release"}
+      ],
+      "outlets": [{"domain": "signal", "name": "envelope"}]
+    },
+    {
+      "key": "else/asr~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "control", "name": "gate"},
+        {"domain": "control", "name": "attack"},
+        {"domain": "control", "name": "release"}
+      ],
+      "outlets": [{"domain": "signal", "name": "envelope"}]
+    },
+    {
+      "key": "else/decay~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "time"}
+      ],
+      "outlets": [{"domain": "signal", "name": "envelope"}]
+    },
+    {
+      "key": "else/envgen~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "list"}],
+      "outlets": [
+        {"domain": "signal", "name": "envelope"},
+        {"domain": "control", "name": "bang"}
+      ]
+    },
+    {
+      "key": "else/lowpass~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/highpass~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/bandpass~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "q"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/resonant~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "q"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/allpass~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "time"},
+        {"domain": "signal_or_control", "name": "feedback"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/comb~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "time"},
+        {"domain": "signal_or_control", "name": "feedback"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/fbdelay~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "time"},
+        {"domain": "signal_or_control", "name": "feedback"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/del~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "time"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/reverb~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"},
+        {"domain": "control", "name": "decay"},
+        {"domain": "control", "name": "hf_damp"},
+        {"domain": "control", "name": "mix"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ]
+    },
+    {
+      "key": "else/pan~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "pan"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ]
+    },
+    {
+      "key": "else/pan2~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"},
+        {"domain": "signal_or_control", "name": "pan"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ]
+    },
+    {
+      "key": "else/spread~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"},
+        {"domain": "control", "name": "spread"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ]
+    },
+    {
+      "key": "else/xfade~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal_a"},
+        {"domain": "signal", "name": "signal_b"},
+        {"domain": "signal_or_control", "name": "mix"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/mtof~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "midi"}],
+      "outlets": [{"domain": "signal", "name": "freq"}]
+    },
+    {
+      "key": "else/ftom~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "midi"}]
+    },
+    {
+      "key": "else/db2lin~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "db"}],
+      "outlets": [{"domain": "signal", "name": "linear"}]
+    },
+    {
+      "key": "else/lin2db~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "linear"}],
+      "outlets": [{"domain": "signal", "name": "db"}]
+    },
+    {
+      "key": "else/click~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "trigger"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/dust~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "density"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/white~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/pink~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/brown~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/crackle~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "param"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/rand.i",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "range"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "else/rand.f",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "range"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "else/chance",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "prob"}
+      ],
+      "outlets": [
+        {"domain": "control", "name": "yes"},
+        {"domain": "control", "name": "no"}
+      ]
+    },
+    {
+      "key": "else/lfnoise~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/ramp~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "time"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/lag~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "time"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/lag2~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "up"},
+        {"domain": "control", "name": "down"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/glide~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "time"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/slew~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "up"},
+        {"domain": "control", "name": "down"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/sample~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "trigger"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/fold~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "lo"},
+        {"domain": "control", "name": "hi"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/drive~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "drive"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/saturator~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "drive"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/crusher~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "bits"},
+        {"domain": "control", "name": "downsample"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "else/pitch~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [
+        {"domain": "control", "name": "freq"},
+        {"domain": "control", "name": "fidelity"}
+      ]
+    },
+    {
+      "key": "else/meter~",
+      "library": "else",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "control", "name": "level"}]
+    },
+    {
+      "key": "else/lfo",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "on/off"},
+        {"domain": "control", "name": "freq"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "else/seq",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "reset"}
+      ],
+      "outlets": [
+        {"domain": "control", "name": "value"},
+        {"domain": "control", "name": "step"}
+      ]
+    },
+    {
+      "key": "else/voices",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "pitch"}],
+      "outlets": [
+        {"domain": "control", "name": "voice"},
+        {"domain": "control", "name": "pitch"},
+        {"domain": "control", "name": "vel"}
+      ]
+    },
+    {
+      "key": "else/note",
+      "library": "else",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "note_vel"}],
+      "outlets": [
+        {"domain": "control", "name": "pitch"},
+        {"domain": "control", "name": "velocity"}
+      ]
+    }
+  ],
+  "overrides": []
+}

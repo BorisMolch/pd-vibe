@@ -582,3 +582,69 @@ class PdPy(CanvasBase, Base):
   def arrange(self):
     """ Arrange the internal patch in 2d space """
     self.__arrange__(self)
+
+  def to_ir(self, patch_path=None, file_content=None):
+    """
+    Convert this PdPy instance to an IR (Intermediate Representation).
+
+    This method builds a semantic IR representation of the patch, enabling
+    cross-file symbol resolution, graph analysis, and LLM-friendly DSL output.
+
+    Parameters
+    ----------
+    patch_path : str, optional
+        Path to the .pd file (for metadata). If None, uses patchname.
+    file_content : bytes, optional
+        Raw file content (for SHA256 hash computation).
+
+    Returns
+    -------
+    IRPatch
+        The IR representation of this patch.
+
+    Example
+    -------
+    >>> pdpy = PdPy('my_patch.pd')
+    >>> ir = pdpy.to_ir()
+    >>> print(ir.to_json())  # JSON representation
+    >>>
+    >>> # Get DSL representation
+    >>> from pdpy_lib.ir import ir_to_dsl, DSLMode
+    >>> print(ir_to_dsl(ir, DSLMode.COMPACT))
+    """
+    from ..ir.build import IRBuilder
+
+    builder = IRBuilder()
+    if patch_path is None:
+      patch_path = f"{self.patchname}.pd"
+
+    return builder.build(self, patch_path, file_content)
+
+  def to_dsl(self, mode='compact', patch_path=None):
+    """
+    Convert this PdPy instance to DSL (Domain-Specific Language) format.
+
+    Parameters
+    ----------
+    mode : str
+        DSL mode: 'compact' (token-efficient) or 'full' (explicit).
+    patch_path : str, optional
+        Path to the .pd file (for metadata).
+
+    Returns
+    -------
+    str
+        The DSL representation of this patch.
+
+    Example
+    -------
+    >>> pdpy = PdPy('my_patch.pd')
+    >>> print(pdpy.to_dsl())  # Compact DSL
+    >>> print(pdpy.to_dsl(mode='full'))  # Full DSL
+    """
+    from ..ir.dsl import DSLSerializer, DSLMode
+
+    ir = self.to_ir(patch_path)
+    dsl_mode = DSLMode.FULL if mode == 'full' else DSLMode.COMPACT
+    serializer = DSLSerializer(ir, dsl_mode)
+    return serializer.serialize()

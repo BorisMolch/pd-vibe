@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(PYTHONPATH=/Users/borismo/pdpy python3:*)",
+      "Bash(ls -la /Users/borismo/Jambl-ios/Jambl-Pd/*.dsl /Users/borismo/Jambl-ios/Jambl-Pd/*.json echo -e \"\\\\n=== Symbols Section from DSL ===\" grep -A100 \"^symbols:\" /Users/borismo/Jambl-ios/Jambl-Pd/main.pd-ir.dsl)",
+      "Bash(__NEW_LINE_4d47c6b77591b4fe__ echo -e \"\\\\n=== Wires Section Preview ===\")",
+      "Bash(chmod:*)",
+      "Bash(/Users/borismo/pdpy/pd2ir main.pd)",
+      "WebSearch",
+      "Bash(~/.claude/skills/skill-creator/scripts/init_skill.py pd-patch --path ~/.claude/skills/)"
+    ]
+  }
+}

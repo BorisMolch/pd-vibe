@@ -1,0 +1,829 @@
+{
+  "registry_version": "0.1",
+  "sources": [
+    {"name": "pd-vanilla", "version": "0.55"}
+  ],
+  "objects": [
+    {
+      "key": "bang",
+      "aliases": ["b"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "trigger"}],
+      "outlets": [{"domain": "control", "name": "bang"}]
+    },
+    {
+      "key": "float",
+      "aliases": ["f"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "value"},
+        {"domain": "control", "name": "set"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}],
+      "args": [{"name": "initial", "type": "number", "optional": true}]
+    },
+    {
+      "key": "symbol",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "symbol"},
+        {"domain": "control", "name": "set"}
+      ],
+      "outlets": [{"domain": "control", "name": "symbol"}]
+    },
+    {
+      "key": "int",
+      "aliases": ["i"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "value"},
+        {"domain": "control", "name": "set"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "send",
+      "aliases": ["s"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [],
+      "args": [{"name": "symbol", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "send_receive", "role": "writer"}
+    },
+    {
+      "key": "receive",
+      "aliases": ["r"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [],
+      "outlets": [{"domain": "control", "name": "out"}],
+      "args": [{"name": "symbol", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "send_receive", "role": "reader"}
+    },
+    {
+      "key": "loadbang",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [],
+      "outlets": [{"domain": "control", "name": "bang"}]
+    },
+    {
+      "key": "print",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [],
+      "args": [{"name": "prefix", "type": "symbol", "optional": true}]
+    },
+    {
+      "key": "trigger",
+      "aliases": ["t"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [{"domain": "control", "name": "out"}],
+      "args": [{"name": "types", "type": "list", "optional": true}]
+    },
+    {
+      "key": "spigot",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "in"},
+        {"domain": "control", "name": "gate"}
+      ],
+      "outlets": [{"domain": "control", "name": "out"}]
+    },
+    {
+      "key": "moses",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "value"},
+        {"domain": "control", "name": "split"}
+      ],
+      "outlets": [
+        {"domain": "control", "name": "left"},
+        {"domain": "control", "name": "right"}
+      ]
+    },
+    {
+      "key": "until",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "count"},
+        {"domain": "control", "name": "stop"}
+      ],
+      "outlets": [
+        {"domain": "control", "name": "bang"},
+        {"domain": "control", "name": "done"}
+      ]
+    },
+    {
+      "key": "swap",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "left"},
+        {"domain": "control", "name": "right"}
+      ],
+      "outlets": [
+        {"domain": "control", "name": "right"},
+        {"domain": "control", "name": "left"}
+      ]
+    },
+    {
+      "key": "change",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [{"domain": "control", "name": "out"}]
+    },
+    {
+      "key": "metro",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "toggle"},
+        {"domain": "control", "name": "interval"}
+      ],
+      "outlets": [{"domain": "control", "name": "bang"}],
+      "args": [{"name": "interval", "type": "number", "optional": true}]
+    },
+    {
+      "key": "delay",
+      "aliases": ["del"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "trigger"},
+        {"domain": "control", "name": "time"}
+      ],
+      "outlets": [{"domain": "control", "name": "bang"}],
+      "args": [{"name": "time", "type": "number", "optional": true}]
+    },
+    {
+      "key": "timer",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "start"},
+        {"domain": "control", "name": "stop"}
+      ],
+      "outlets": [{"domain": "control", "name": "time"}]
+    },
+    {
+      "key": "line",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "target"},
+        {"domain": "control", "name": "time"},
+        {"domain": "control", "name": "stop"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "pipe",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [{"domain": "control", "name": "out"}]
+    },
+    {
+      "key": "osc~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "freq", "type": "number", "optional": true}]
+    },
+    {
+      "key": "phasor~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "freq", "type": "number", "optional": true}]
+    },
+    {
+      "key": "cos~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "phase"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "noise~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "+~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "-~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "*~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "multiplier", "type": "number", "optional": true}]
+    },
+    {
+      "key": "/~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "lop~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "freq", "type": "number", "optional": true}]
+    },
+    {
+      "key": "hip~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "freq", "type": "number", "optional": true}]
+    },
+    {
+      "key": "bp~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "freq"},
+        {"domain": "signal_or_control", "name": "q"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [
+        {"name": "freq", "type": "number", "optional": true},
+        {"name": "q", "type": "number", "optional": true}
+      ]
+    },
+    {
+      "key": "vcf~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal", "name": "freq"},
+        {"domain": "signal_or_control", "name": "q"}
+      ],
+      "outlets": [
+        {"domain": "signal", "name": "real"},
+        {"domain": "signal", "name": "imag"}
+      ]
+    },
+    {
+      "key": "delwrite~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [],
+      "args": [
+        {"name": "name", "type": "symbol", "required": true},
+        {"name": "size", "type": "number", "required": true}
+      ],
+      "symbol_semantics": {"kind": "send_receive", "role": "writer"}
+    },
+    {
+      "key": "delread~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "time"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [
+        {"name": "name", "type": "symbol", "required": true},
+        {"name": "time", "type": "number", "optional": true}
+      ],
+      "symbol_semantics": {"kind": "send_receive", "role": "reader"}
+    },
+    {
+      "key": "delread4~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "time"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [
+        {"name": "name", "type": "symbol", "required": true},
+        {"name": "time", "type": "number", "optional": true}
+      ],
+      "symbol_semantics": {"kind": "send_receive", "role": "reader"}
+    },
+    {
+      "key": "vd~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "time"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "send_receive", "role": "reader"}
+    },
+    {
+      "key": "sig~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "value"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "value", "type": "number", "optional": true}]
+    },
+    {
+      "key": "line~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "target"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "vline~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "target"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "snapshot~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "trigger"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}]
+    },
+    {
+      "key": "env~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "control", "name": "rms"}],
+      "args": [{"name": "window", "type": "number", "optional": true}]
+    },
+    {
+      "key": "dac~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ],
+      "outlets": []
+    },
+    {
+      "key": "adc~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ]
+    },
+    {
+      "key": "send~",
+      "aliases": ["s~"],
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "send_receive", "role": "writer"}
+    },
+    {
+      "key": "receive~",
+      "aliases": ["r~"],
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "send_receive", "role": "reader"}
+    },
+    {
+      "key": "throw~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "throw_catch", "role": "writer"}
+    },
+    {
+      "key": "catch~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "throw_catch", "role": "reader"}
+    },
+    {
+      "key": "inlet",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [],
+      "outlets": [{"domain": "control", "name": "out"}]
+    },
+    {
+      "key": "outlet",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": []
+    },
+    {
+      "key": "inlet~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "outlet~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": []
+    },
+    {
+      "key": "value",
+      "aliases": ["v"],
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "in"}],
+      "outlets": [{"domain": "control", "name": "out"}],
+      "args": [{"name": "name", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "value", "role": "reader"}
+    },
+    {
+      "key": "tabread~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "index"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "reader"}
+    },
+    {
+      "key": "tabread4~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "index"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "reader"}
+    },
+    {
+      "key": "tabosc4~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal_or_control", "name": "freq"}],
+      "outlets": [{"domain": "signal", "name": "signal"}],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "reader"}
+    },
+    {
+      "key": "tabwrite~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "trigger"}
+      ],
+      "outlets": [],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "writer"}
+    },
+    {
+      "key": "tabplay~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "trigger"}],
+      "outlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "control", "name": "done"}
+      ],
+      "args": [{"name": "array", "type": "symbol", "required": true}]
+    },
+    {
+      "key": "tabread",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "index"},
+        {"domain": "control", "name": "set"}
+      ],
+      "outlets": [{"domain": "control", "name": "value"}],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "reader"}
+    },
+    {
+      "key": "tabwrite",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [
+        {"domain": "control", "name": "value"},
+        {"domain": "control", "name": "index"}
+      ],
+      "outlets": [],
+      "args": [{"name": "array", "type": "symbol", "required": true}],
+      "symbol_semantics": {"kind": "array", "role": "writer"}
+    },
+    {
+      "key": "array",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [],
+      "outlets": [],
+      "args": [
+        {"name": "name", "type": "symbol", "required": true},
+        {"name": "size", "type": "number", "required": true}
+      ]
+    },
+    {
+      "key": "table",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [],
+      "outlets": [],
+      "args": [
+        {"name": "name", "type": "symbol", "required": true},
+        {"name": "size", "type": "number", "optional": true}
+      ]
+    },
+    {
+      "key": "soundfiler",
+      "library": "pd-vanilla",
+      "kind": "control",
+      "domain": "control",
+      "inlets": [{"domain": "control", "name": "command"}],
+      "outlets": [{"domain": "control", "name": "frames"}]
+    },
+    {
+      "key": "readsf~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "command"}],
+      "outlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"},
+        {"domain": "control", "name": "done"}
+      ]
+    },
+    {
+      "key": "writesf~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal", "name": "right"}
+      ],
+      "outlets": []
+    },
+    {
+      "key": "clip~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "lo"},
+        {"domain": "signal_or_control", "name": "hi"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "wrap~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "abs~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "sqrt~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "rsqrt~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "pow~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "base"},
+        {"domain": "signal_or_control", "name": "exp"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "exp~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "signal", "name": "signal"}],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "log~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "signal"},
+        {"domain": "signal_or_control", "name": "base"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "min~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "max~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [
+        {"domain": "signal", "name": "left"},
+        {"domain": "signal_or_control", "name": "right"}
+      ],
+      "outlets": [{"domain": "signal", "name": "signal"}]
+    },
+    {
+      "key": "samplerate~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [{"domain": "control", "name": "rate"}]
+    },
+    {
+      "key": "block~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [],
+      "outlets": [],
+      "args": [
+        {"name": "blocksize", "type": "number", "optional": true},
+        {"name": "overlap", "type": "number", "optional": true}
+      ]
+    },
+    {
+      "key": "switch~",
+      "library": "pd-vanilla",
+      "kind": "dsp",
+      "domain": "signal",
+      "inlets": [{"domain": "control", "name": "on/off"}],
+      "outlets": [],
+      "args": [
+        {"name": "blocksize", "type": "number", "optional": true},
+        {"name": "overlap", "type": "number", "optional": true}
+      ]
+    }
+  ],
+  "overrides": [
+    {"match": {"key": "route"}, "rule": "outlets = 1 + argc"},
+    {"match": {"key": "select"}, "rule": "outlets = 1 + argc"},
+    {"match": {"key": "unpack"}, "rule": "outlets = argc"},
+    {"match": {"key": "pack"}, "rule": "inlets = argc"},
+    {"match": {"key": "trigger"}, "rule": "outlets = argc"},
+    {"match": {"key": "dac~"}, "rule": "inlets = max(argc, 2)"},
+    {"match": {"key": "adc~"}, "rule": "outlets = max(argc, 2)"},
+    {"match": {"key": "readsf~"}, "rule": "outlets = argc + 1"},
+    {"match": {"key": "writesf~"}, "rule": "inlets = argc"}
+  ]
+}

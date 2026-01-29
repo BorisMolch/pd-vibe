@@ -47,7 +47,10 @@ class Obj(Object):
       super().__init__(*pd_lines[:3])
       try:
         self.className = pd_lines[3] if 3 < len(pd_lines) else ''
-        if super().__isnum__(self.className):
+        # Handle empty object boxes (no class name)
+        if self.className == '':
+          pass  # Leave className as empty string
+        elif super().__isnum__(self.className):
           if 4 < len(pd_lines):
             self.className = 'list'
             self.addargs(pd_lines[3:])
