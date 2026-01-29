@@ -211,7 +211,7 @@ class ObjectRegistry:
             # Arrays
             ("tabread", [], 2, 1),
             ("tabwrite", [], 2, 0),
-            ("soundfiler", [], 1, 1),
+            ("soundfiler", [], 1, 2),
             # GUI atoms
             ("loadbang", [], 0, 1),
             ("print", [], 1, 0),
@@ -486,6 +486,8 @@ class ObjectRegistry:
             OverrideRule("trigger", "outlets = argc"),
             OverrideRule("dac~", "inlets = max(argc, 2)"),
             OverrideRule("adc~", "outlets = max(argc, 2)"),
+            OverrideRule("readsf~", "outlets = arg0 + 1"),  # channels + done bang
+            OverrideRule("writesf~", "inlets = arg0"),  # channels
         ]
 
     def register(self, spec: ObjectSpec):
@@ -523,10 +525,20 @@ class ObjectRegistry:
         """
         spec = self.get(obj_type)
 
-        # Check override rules
+        # Resolve alias to canonical key for override matching
+        canonical_key = obj_type
+        if obj_type in self._aliases:
+            canonical_key = self._aliases[obj_type]
+
+        # Check override rules (using canonical key)
         for rule in self._overrides:
-            if rule.match_key == obj_type:
+            if rule.match_key == canonical_key:
                 argc = len(args)
+                # Parse first argument as integer if possible (for arg0 rules)
+                arg0 = 1  # default
+                if args and args[0].isdigit():
+                    arg0 = int(args[0])
+
                 inlet_count = len(spec.inlets) if spec else 1
                 outlet_count = len(spec.outlets) if spec else 1
 
@@ -534,8 +546,12 @@ class ObjectRegistry:
                     outlet_count = 1 + argc
                 elif "outlets = argc" in rule.rule:
                     outlet_count = max(argc, 1)
+                elif "outlets = arg0 + 1" in rule.rule:
+                    outlet_count = arg0 + 1
                 elif "inlets = argc" in rule.rule:
                     inlet_count = max(argc, 1)
+                elif "inlets = arg0" in rule.rule:
+                    inlet_count = max(arg0, 1)
                 elif "outlets = max(argc" in rule.rule:
                     outlet_count = max(argc, 2)
                 elif "inlets = max(argc" in rule.rule:

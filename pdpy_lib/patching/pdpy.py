@@ -269,9 +269,9 @@ class PdPy(CanvasBase, Base):
   
   def addComment(self, argv):
     """ Add a Comment object from pure data syntax tokens """
-    self.__last_canvas__().grow()
+    self.__obj_idx__ = self.__last_canvas__().grow()
     # log(1,"COMMENT",argv)
-    comment = Comment(pd_lines=argv)
+    comment = Comment(pd_lines=[self.__obj_idx__] + argv)
     self.__last_canvas__().comment(comment)
     return comment
 

@@ -30,11 +30,13 @@ class Comment(Object):
       if xml.find('text'):
         self.text = [x.text for x in xml.find('text').findall('txt')]
     elif pd_lines is not None:
-      self.position = Point(x=pd_lines[0], y=pd_lines[1])
+      # First element is the object index (id), followed by x, y, then text
+      self.id = pd_lines[0]
+      self.position = Point(x=pd_lines[1], y=pd_lines[2])
       # can have "\\,"
-      # split at "\\;" 
+      # split at "\\;"
       # and the unescaped comma is a border flag: ", f 80"
-      argv = pd_lines[2:]
+      argv = pd_lines[3:]
       if len(argv):
         if 2 < len(argv) and "f" == argv[-2] and argv[-1].isnumeric():
           self.border = self.__num__(argv[-1])

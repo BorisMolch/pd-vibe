@@ -237,40 +237,57 @@ class DSLSerializer:
 
         if wire_edges:
             lines.append("wires:")
-            # Group by source node
-            by_source: Dict[str, List[IREdge]] = defaultdict(list)
+            # Group by (source node, outlet) to properly handle fan-out
+            by_source_outlet: Dict[Tuple[str, int], List[IREdge]] = defaultdict(list)
             for edge in wire_edges:
-                by_source[edge.from_endpoint.node].append(edge)
+                key = (edge.from_endpoint.node, edge.from_endpoint.outlet or 0)
+                by_source_outlet[key].append(edge)
 
-            # Try to form wire chains
-            processed: Set[str] = set()
-            for src_node, edges in by_source.items():
-                if src_node in processed:
-                    continue
+            # Track which edges have been processed (by edge id)
+            processed_edges: Set[str] = set()
 
-                # Try to build a wire chain
-                wire_chain = [f"{src_node}:{edges[0].from_endpoint.outlet or 0}"]
-                current = edges[0].to_endpoint.node
-                current_inlet = edges[0].to_endpoint.inlet or 0
-                wire_chain.append(f"{current}:{current_inlet}")
+            # Process each (source, outlet) pair
+            for (src_node, src_outlet), edges in by_source_outlet.items():
+                # Process ALL edges from this source/outlet (handles fan-out)
+                for edge in edges:
+                    if edge.id in processed_edges:
+                        continue
 
-                processed.add(src_node)
-
-                # Follow the chain (with cycle detection)
-                chain_visited: Set[str] = {src_node, current}
-                while current in by_source and len(by_source[current]) == 1:
-                    next_edge = by_source[current][0]
-                    next_node = next_edge.to_endpoint.node
-                    # Stop if we'd create a cycle
-                    if next_node in chain_visited:
-                        break
-                    current = next_node
-                    current_inlet = next_edge.to_endpoint.inlet or 0
+                    # Start a wire chain from this edge
+                    wire_chain = [f"{src_node}:{src_outlet}"]
+                    current = edge.to_endpoint.node
+                    current_inlet = edge.to_endpoint.inlet or 0
                     wire_chain.append(f"{current}:{current_inlet}")
-                    processed.add(next_edge.from_endpoint.node)
-                    chain_visited.add(current)
+                    processed_edges.add(edge.id)
 
-                lines.append(f"  {' -> '.join(wire_chain)}")
+                    # Follow the chain (with cycle detection)
+                    # Only continue if the next node has exactly one outgoing edge
+                    chain_visited: Set[str] = {src_node, current}
+                    while True:
+                        # Find edges from current node
+                        current_edges = []
+                        for (n, o), e_list in by_source_outlet.items():
+                            if n == current:
+                                current_edges.extend(e_list)
+
+                        # Only continue chain if exactly one unprocessed outgoing edge
+                        unprocessed = [e for e in current_edges if e.id not in processed_edges]
+                        if len(unprocessed) != 1:
+                            break
+
+                        next_edge = unprocessed[0]
+                        next_node = next_edge.to_endpoint.node
+                        # Stop if we'd create a cycle
+                        if next_node in chain_visited:
+                            break
+
+                        current = next_node
+                        current_inlet = next_edge.to_endpoint.inlet or 0
+                        wire_chain.append(f"{current}:{current_inlet}")
+                        processed_edges.add(next_edge.id)
+                        chain_visited.add(current)
+
+                    lines.append(f"  {' -> '.join(wire_chain)}")
 
             lines.append("")
 
@@ -292,6 +309,21 @@ class DSLSerializer:
             )
             lines.append(f"cycles: {cycles_str}")
             lines.append("")
+
+        # Diagnostics (warnings and errors)
+        if self.ir.diagnostics:
+            if self.ir.diagnostics.warnings:
+                lines.append("warnings:")
+                for diag in self.ir.diagnostics.warnings:
+                    node_str = f" @ {diag.node}" if diag.node else ""
+                    lines.append(f"  [{diag.code}] {diag.message}{node_str}")
+                lines.append("")
+            if self.ir.diagnostics.errors:
+                lines.append("errors:")
+                for diag in self.ir.diagnostics.errors:
+                    node_str = f" @ {diag.node}" if diag.node else ""
+                    lines.append(f"  [{diag.code}] {diag.message}{node_str}")
+                lines.append("")
 
         return "\n".join(lines)
 

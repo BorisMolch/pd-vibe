@@ -387,6 +387,11 @@ class IRBuilder:
             # Extract symbols
             self._symbol_extractor.extract_from_node(ir_id, obj_type, args)
 
+        # Build a map of original_id -> (type, args) for IO count validation
+        node_info_map: Dict[int, Tuple[str, List[str]]] = {}
+        for i, data in enumerate(node_data):
+            node_info_map[data['original_id']] = (data['type'], data['args'])
+
         # Create IR edges
         for edge_tuple in edge_tuples:
             src_id, src_port, dst_id, dst_port = edge_tuple
@@ -396,6 +401,38 @@ class IRBuilder:
 
             if not src_ir_id or not dst_ir_id:
                 continue
+
+            # Validate outlet/inlet indices before creating edge
+            is_src_subpatch = (canvas_id, src_id) in self._subpatch_map
+            is_dst_subpatch = (canvas_id, dst_id) in self._subpatch_map
+
+            # Check source outlet validity (skip for subpatches and unknown objects)
+            if not is_src_subpatch and src_id in node_info_map:
+                src_type, src_args = node_info_map[src_id]
+                # Only validate if object is known in registry
+                if self.registry.is_known(src_type):
+                    _, outlet_count = self.registry.get_io_count(src_type, src_args)
+                    if src_port >= outlet_count:
+                        self._diagnostics.warnings.append(IRDiagnostic(
+                            code="INVALID_CONNECTION",
+                            message=f"Connection from {src_type} outlet {src_port} invalid (only has {outlet_count} outlet(s))",
+                            node=src_ir_id,
+                        ))
+                        continue  # Skip this invalid edge
+
+            # Check destination inlet validity (skip for subpatches and unknown objects)
+            if not is_dst_subpatch and dst_id in node_info_map:
+                dst_type, dst_args = node_info_map[dst_id]
+                # Only validate if object is known in registry
+                if self.registry.is_known(dst_type):
+                    inlet_count, _ = self.registry.get_io_count(dst_type, dst_args)
+                    if dst_port >= inlet_count:
+                        self._diagnostics.warnings.append(IRDiagnostic(
+                            code="INVALID_CONNECTION",
+                            message=f"Connection to {dst_type} inlet {dst_port} invalid (only has {inlet_count} inlet(s))",
+                            node=dst_ir_id,
+                        ))
+                        continue  # Skip this invalid edge
 
             # Handle cross-boundary edges: if source is a subpatch, connect from its outlet
             src_subpatch_path = self._subpatch_map.get((canvas_id, src_id))

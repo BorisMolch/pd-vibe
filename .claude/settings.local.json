@@ -8,7 +8,8 @@
       "Bash(chmod:*)",
       "Bash(/Users/borismo/pdpy/pd2ir main.pd)",
       "WebSearch",
-      "Bash(~/.claude/skills/skill-creator/scripts/init_skill.py pd-patch --path ~/.claude/skills/)"
+      "Bash(~/.claude/skills/skill-creator/scripts/init_skill.py pd-patch --path ~/.claude/skills/)",
+      "Bash(/Users/borismo/pdpy/pd2ir:*)"
     ]
   }
 }
