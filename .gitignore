@@ -21,3 +21,10 @@ _build/
 *.swp
 examples/*.pd
 examples/*.json
+
+# Generated IR/DSL output files
+*-ir.json
+*-ir.dsl
+*-explain.md
+*-doc.md
+*-doc.json
