@@ -50,14 +50,6 @@ from .docgen import (
     generate_doc,
     generate_doc_from_file,
 )
-from .explain import (
-    PathSegment,
-    SignalPath,
-    PatchExplanation,
-    PatchExplainer,
-    explain_patch,
-    explain_patch_from_file,
-)
 from .visualize import (
     SVGRenderer,
     render_svg,
@@ -142,13 +134,6 @@ __all__ = [
     'DocGenerator',
     'generate_doc',
     'generate_doc_from_file',
-    # Explanation generation
-    'PathSegment',
-    'SignalPath',
-    'PatchExplanation',
-    'PatchExplainer',
-    'explain_patch',
-    'explain_patch_from_file',
     # Visualization
     'SVGRenderer',
     'render_svg',

@@ -15,10 +15,10 @@ Analyze and edit Pure Data (.pd) patches using the IR (Intermediate Representati
 # Generates: file.pd-ir.json, file.pd-ir.dsl
 ```
 
-### Get a prose explanation (best for understanding patches)
+### Generate SVG diagram
 ```bash
-/Users/borismo/pdpy/pd2ir --explain <file.pd>
-# Generates: file.pd-explain.md (and prints to stdout)
+/Users/borismo/pdpy/pd2ir --svg <file.pd>
+# Generates: file.pd.svg (visual diagram of patch)
 ```
 
 ### Take screenshot using Pd (macOS)
@@ -239,18 +239,16 @@ This is useful when you know where something is visually but not its index.
 ## Workflow
 
 ### Understanding a patch
-1. **Get the prose summary first**: `pd2ir --explain patch.pd`
-2. **Read the explanation**: Understand what it does before diving into details
-3. **Generate DSL if needed**: `pd2ir patch.pd` for detailed structure
-4. **Check symbols**: Look for orphaned send/receives in DSL
-5. **Trace specific paths**: Follow `~` objects from input to output
+1. **Generate DSL**: `pd2ir patch.pd` for semantic structure
+2. **Read the DSL**: Nodes, wires, symbols sections show full structure
+3. **Check symbols**: Look for orphaned send/receives
+4. **Trace specific paths**: Follow `~` objects from input to output
 
 ### Editing a patch
-1. **Understand first**: Run `--explain` to know what you're changing
-2. **Generate DSL**: `pd2ir patch.pd` to see structure
-3. **Edit .pd file**: Make changes to the raw file
-4. **Re-analyze**: Run `pd2ir` again to verify
-5. **Compare changes**: Use `pddiff` to see semantic diff
+1. **Generate DSL**: `pd2ir patch.pd` to see structure
+2. **Edit .pd file**: Make changes to the raw file
+3. **Re-analyze**: Run `pd2ir` again to verify
+4. **Compare changes**: Use `pddiff` to see semantic diff
 
 ## Abstraction Documentation Generator
 
@@ -290,53 +288,6 @@ Add comments in your .pd file following this pattern:
 ```
 
 The generator will extract these descriptions and include them in the output.
-
-## Prose Explanation (--explain)
-
-The `--explain` flag generates a natural language summary of what a patch does. **Use this first when trying to understand an unfamiliar patch.**
-
-```bash
-/Users/borismo/pdpy/pd2ir --explain <file.pd>
-```
-
-### Example output
-```markdown
-# test_complex
-
-**Type:** synthesizer
-
-## Summary
-This patch generates audio using oscillators (11 objects).
-Features: delay/feedback, filtering.
-
-## Signal Flow
-**Delay/feedback:** Delay feedback loop 'mydelay': 500ms buffer, read at 250ms
-
-Signal paths:
-1. sine oscillator (440 Hz) → multiply → lowpass filter (1000 Hz) →
-   highpass filter (50 Hz) → multiply by 0.5 → add/mix → audio output
-
-## Control Flow
-- Receives 'osc-tick' → f
-- Receives 'osc-speed' → pack(float, 30)
-
-## External Dependencies
-- receives: osc-tick, osc-stop
-- sends: osc-sum
-```
-
-### What it detects
-- **Patch type**: synthesizer, effect, sequencer, abstraction, etc.
-- **Signal paths**: Traces audio from oscillators/inputs to dac~/outputs
-- **Delay patterns**: Identifies feedback loops and multi-tap delays
-- **Control flow**: Shows what triggers what (metro, loadbang, receives)
-- **External dependencies**: Lists send/receive symbols for cross-patch communication
-- **Key objects**: Counts oscillators, filters, delays, etc.
-
-### When to use --explain vs DSL
-- **--explain**: Quick understanding of what a patch does (start here)
-- **DSL (.pd-ir.dsl)**: Detailed structure for debugging and editing
-- **--doc**: API documentation for reusable abstractions
 
 ## Comparing Patches (Git Diff)
 
@@ -387,5 +338,4 @@ Then `git diff` will show semantic diffs for .pd files.
 - pddiff tool: `/Users/borismo/pdpy/pddiff`
 - Object registry: `/Users/borismo/pdpy/data/objects.vanilla.json`
 - IR module: `/Users/borismo/pdpy/pdpy_lib/ir/`
-- Explain module: `/Users/borismo/pdpy/pdpy_lib/ir/explain.py`
 - Docgen module: `/Users/borismo/pdpy/pdpy_lib/ir/docgen.py`

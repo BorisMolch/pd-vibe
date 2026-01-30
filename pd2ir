@@ -9,7 +9,6 @@ Usage:
     pd2ir --no-dsl <file.pd>     # Generate IR only, skip DSL
     pd2ir --doc <file.pd>        # Generate documentation (markdown)
     pd2ir --doc-json <file.pd>   # Generate documentation (JSON)
-    pd2ir --explain <file.pd>    # Generate prose explanation (for LLMs)
     pd2ir --screenshot <file.pd> # Take screenshot using Pd (macOS)
     pd2ir --watch <file.pd>      # Watch for changes and auto-convert
     pd2ir --watch <directory>    # Watch all .pd files in directory
@@ -33,7 +32,7 @@ from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
 def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False,
                  no_dsl: bool = False, annotate: bool = False,
                  doc: bool = False, doc_json: bool = False,
-                 explain: bool = False, screenshot: bool = False) -> bool:
+                 screenshot: bool = False) -> bool:
     """Convert a .pd file to IR JSON and DSL formats."""
     try:
         # Screenshot mode - doesn't need IR parsing
@@ -88,24 +87,6 @@ def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False
 
             return True
 
-        # Explain mode - generate prose explanation
-        if explain:
-            from pdpy_lib.ir.explain import explain_patch
-            explanation = explain_patch(ir)
-
-            explain_path = pd_path.parent / f"{pd_path.name}-explain.md"
-            with open(explain_path, 'w') as f:
-                f.write(explanation.to_text())
-
-            if not quiet:
-                print(f"[ok] {pd_path.name}")
-                print(f"     -> {explain_path.name}")
-                print()
-                # Also print to stdout for immediate feedback
-                print(explanation.to_text())
-
-            return True
-
         # Standard IR/DSL mode
         # Output paths
         base = pd_path.with_suffix('')
@@ -145,7 +126,7 @@ def get_mtime(path: Path) -> float:
 
 
 def watch_files(paths: list[Path], interval: float = 1.0, annotate: bool = False,
-                doc: bool = False, doc_json: bool = False, explain: bool = False,
+                doc: bool = False, doc_json: bool = False,
                 screenshot: bool = False):
     """Watch files for changes and reconvert."""
     # Track modification times
@@ -155,7 +136,7 @@ def watch_files(paths: list[Path], interval: float = 1.0, annotate: bool = False
 
     # Initial conversion
     for p in paths:
-        convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json, explain=explain,
+        convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json,
                      screenshot=screenshot)
 
     print()
@@ -169,7 +150,7 @@ def watch_files(paths: list[Path], interval: float = 1.0, annotate: bool = False
                 if new_mtime > mtimes[p]:
                     mtimes[p] = new_mtime
                     print(f"\n[changed] {p.name}")
-                    convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json, explain=explain,
+                    convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json,
                                  screenshot=screenshot)
                     print()
 
@@ -193,7 +174,6 @@ Examples:
     pd2ir --no-dsl main.pd           # Generate IR JSON only (no DSL)
     pd2ir --doc main.pd              # Generate documentation (markdown)
     pd2ir --doc-json main.pd         # Generate documentation (JSON)
-    pd2ir --explain main.pd          # Generate prose explanation (for LLMs)
     pd2ir --screenshot main.pd       # Screenshot using Pd (macOS)
     pd2ir --watch main.pd            # Watch single file
     pd2ir --watch .                  # Watch all .pd files in current dir
@@ -211,8 +191,6 @@ Examples:
                        help='Generate documentation (markdown)')
     parser.add_argument('--doc-json', action='store_true',
                        help='Generate documentation (JSON)')
-    parser.add_argument('--explain', action='store_true',
-                       help='Generate prose explanation (for LLMs)')
     parser.add_argument('--screenshot', action='store_true',
                        help='Take screenshot using Pd (macOS only)')
 
@@ -245,7 +223,7 @@ Examples:
 
     if args.watch:
         watch_files(pd_files, annotate=args.annotate, doc=args.doc, doc_json=args.doc_json,
-                    explain=args.explain, screenshot=args.screenshot)
+                    screenshot=args.screenshot)
     else:
         # One-time conversion
         success = 0
@@ -253,7 +231,7 @@ Examples:
             if convert_file(p, quiet=args.quiet, validate_only=args.validate,
                           no_dsl=args.no_dsl, annotate=args.annotate,
                           doc=args.doc, doc_json=args.doc_json,
-                          explain=args.explain, screenshot=args.screenshot):
+                          screenshot=args.screenshot):
                 success += 1
 
         if len(pd_files) > 1:
