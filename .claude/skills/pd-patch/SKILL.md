@@ -21,12 +21,6 @@ Analyze and edit Pure Data (.pd) patches using the IR (Intermediate Representati
 # Generates: file.pd-explain.md (and prints to stdout)
 ```
 
-### Generate SVG diagram
-```bash
-/Users/borismo/pdpy/pd2ir --svg <file.pd>
-# Generates: file.pd.svg (visual diagram of patch)
-```
-
 ### Take screenshot using Pd (macOS)
 ```bash
 /Users/borismo/pdpy/pd2ir --screenshot <file.pd>
