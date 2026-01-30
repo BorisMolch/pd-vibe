@@ -4,8 +4,11 @@ pd2ir - Convert Pure Data patches to IR and DSL formats
 
 Usage:
     pd2ir <file.pd>              # Convert once (IR + DSL)
+    pd2ir -a <file.pd>           # Convert with semantic annotations
     pd2ir --validate <file.pd>   # Validate syntax only (fast)
     pd2ir --no-dsl <file.pd>     # Generate IR only, skip DSL
+    pd2ir --doc <file.pd>        # Generate documentation (markdown)
+    pd2ir --doc-json <file.pd>   # Generate documentation (JSON)
     pd2ir --watch <file.pd>      # Watch for changes and auto-convert
     pd2ir --watch <directory>    # Watch all .pd files in directory
 """
@@ -25,7 +28,9 @@ from pdpy_lib.patching.pdpy import PdPy
 from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
 
 
-def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False, no_dsl: bool = False) -> bool:
+def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False,
+                 no_dsl: bool = False, annotate: bool = False,
+                 doc: bool = False, doc_json: bool = False) -> bool:
     """Convert a .pd file to IR JSON and DSL formats."""
     try:
         # Load and parse
@@ -39,13 +44,38 @@ def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False
                 print(f"[valid] {pd_path.name}")
             return True
 
+        # Generate IR (needed for all output modes)
+        ir = pdpy.to_ir(patch_path=str(pd_path))
+
+        # Documentation mode
+        if doc or doc_json:
+            from pdpy_lib.ir.docgen import generate_doc
+            abstraction_doc = generate_doc(ir, str(pd_path))
+
+            if doc:
+                doc_md_path = pd_path.parent / f"{pd_path.name}-doc.md"
+                with open(doc_md_path, 'w') as f:
+                    f.write(abstraction_doc.to_markdown())
+                if not quiet:
+                    print(f"[ok] {pd_path.name}")
+                    print(f"     -> {doc_md_path.name}")
+
+            if doc_json:
+                doc_json_path = pd_path.parent / f"{pd_path.name}-doc.json"
+                with open(doc_json_path, 'w') as f:
+                    f.write(abstraction_doc.to_json())
+                if not quiet:
+                    if not doc:  # Don't print [ok] twice
+                        print(f"[ok] {pd_path.name}")
+                    print(f"     -> {doc_json_path.name}")
+
+            return True
+
+        # Standard IR/DSL mode
         # Output paths
         base = pd_path.with_suffix('')
         json_path = pd_path.parent / f"{pd_path.name}-ir.json"
         dsl_path = pd_path.parent / f"{pd_path.name}-ir.dsl"
-
-        # Generate IR
-        ir = pdpy.to_ir(patch_path=str(pd_path))
 
         # Write JSON
         with open(json_path, 'w') as f:
@@ -54,7 +84,7 @@ def convert_file(pd_path: Path, quiet: bool = False, validate_only: bool = False
         # Write DSL
         if not no_dsl:
             from pdpy_lib.ir.dsl import ir_to_dsl, DSLMode
-            dsl_content = ir_to_dsl(ir, DSLMode.COMPACT)
+            dsl_content = ir_to_dsl(ir, DSLMode.COMPACT, annotate=annotate)
             with open(dsl_path, 'w') as f:
                 f.write(dsl_content)
 
@@ -79,7 +109,8 @@ def get_mtime(path: Path) -> float:
         return 0
 
 
-def watch_files(paths: list[Path], interval: float = 1.0):
+def watch_files(paths: list[Path], interval: float = 1.0, annotate: bool = False,
+                doc: bool = False, doc_json: bool = False):
     """Watch files for changes and reconvert."""
     # Track modification times
     mtimes = {p: get_mtime(p) for p in paths}
@@ -88,7 +119,7 @@ def watch_files(paths: list[Path], interval: float = 1.0):
 
     # Initial conversion
     for p in paths:
-        convert_file(p)
+        convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json)
 
     print()
 
@@ -101,7 +132,7 @@ def watch_files(paths: list[Path], interval: float = 1.0):
                 if new_mtime > mtimes[p]:
                     mtimes[p] = new_mtime
                     print(f"\n[changed] {p.name}")
-                    convert_file(p)
+                    convert_file(p, annotate=annotate, doc=doc, doc_json=doc_json)
                     print()
 
     except KeyboardInterrupt:
@@ -122,6 +153,9 @@ Examples:
     pd2ir main.pd                    # Convert single file
     pd2ir --validate main.pd         # Validate syntax only (fast)
     pd2ir --no-dsl main.pd           # Generate IR JSON only (no DSL)
+    pd2ir --doc main.pd              # Generate documentation (markdown)
+    pd2ir --doc-json main.pd         # Generate documentation (JSON)
+    pd2ir --doc --doc-json main.pd   # Generate both doc formats
     pd2ir --watch main.pd            # Watch single file
     pd2ir --watch .                  # Watch all .pd files in current dir
     pd2ir *.pd                       # Convert multiple files
@@ -132,6 +166,12 @@ Examples:
     parser.add_argument('-q', '--quiet', action='store_true', help='Quiet output')
     parser.add_argument('-v', '--validate', action='store_true', help='Validate only, no file output')
     parser.add_argument('--no-dsl', action='store_true', help='Skip DSL generation (faster)')
+    parser.add_argument('-a', '--annotate', action='store_true',
+                       help='Add semantic annotations (parameter meanings, units)')
+    parser.add_argument('--doc', action='store_true',
+                       help='Generate documentation (markdown)')
+    parser.add_argument('--doc-json', action='store_true',
+                       help='Generate documentation (JSON)')
 
     args = parser.parse_args()
 
@@ -161,12 +201,14 @@ Examples:
     pd_files = [p for p in pd_files if not (p in seen or seen.add(p))]
 
     if args.watch:
-        watch_files(pd_files)
+        watch_files(pd_files, annotate=args.annotate, doc=args.doc, doc_json=args.doc_json)
     else:
         # One-time conversion
         success = 0
         for p in pd_files:
-            if convert_file(p, quiet=args.quiet, validate_only=args.validate, no_dsl=args.no_dsl):
+            if convert_file(p, quiet=args.quiet, validate_only=args.validate,
+                          no_dsl=args.no_dsl, annotate=args.annotate,
+                          doc=args.doc, doc_json=args.doc_json):
                 success += 1
 
         if len(pd_files) > 1:

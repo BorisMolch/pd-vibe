@@ -22,6 +22,7 @@ from .core import (
     SymbolKind,
 )
 from .analysis import GraphAnalyzer
+from .registry import get_registry, ObjectSpec
 
 
 class DSLMode(Enum):
@@ -33,10 +34,21 @@ class DSLMode(Enum):
 class DSLSerializer:
     """Serializes IR to DSL format."""
 
-    def __init__(self, ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT):
+    def __init__(self, ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT,
+                 annotate: bool = False):
+        """
+        Initialize DSL serializer.
+
+        Args:
+            ir_patch: The IR patch to serialize
+            mode: DSL mode (FULL or COMPACT)
+            annotate: Include semantic annotations from registry
+        """
         self.ir = ir_patch
         self.mode = mode
+        self.annotate = annotate
         self._analyzer: Optional[GraphAnalyzer] = None
+        self._registry = get_registry() if annotate else None
 
     def _get_analyzer(self) -> GraphAnalyzer:
         """Get or create a graph analyzer."""
@@ -73,6 +85,66 @@ class DSLSerializer:
         if args:
             return f"{node.type} {args}"
         return node.type
+
+    def _format_annotation(self, node: IRNode) -> Optional[str]:
+        """Generate semantic annotation for a node's arguments and I/O."""
+        if not self._registry:
+            return None
+
+        spec = self._registry.get(node.type)
+        if not spec:
+            return None
+
+        parts = []
+
+        # Annotate arguments if present
+        if spec.args and node.args:
+            for i, arg_val in enumerate(node.args):
+                if i < len(spec.args):
+                    arg_spec = spec.args[i]
+                    arg_parts = []
+                    if arg_spec.description:
+                        arg_parts.append(arg_spec.description)
+                    if arg_spec.unit:
+                        arg_parts.append(f"[{arg_spec.unit}]")
+                    if arg_parts:
+                        parts.append(f"{arg_val}={' '.join(arg_parts)}")
+
+        # If no arg annotations, show inlet/outlet summary for I/O objects
+        if not parts:
+            inlet_descs = [i.description for i in spec.inlets if i.description]
+            outlet_descs = [o.description for o in spec.outlets if o.description]
+
+            if inlet_descs and len(inlet_descs) <= 2:
+                parts.append(f"in: {', '.join(inlet_descs)}")
+            if outlet_descs and len(outlet_descs) <= 2:
+                parts.append(f"out: {', '.join(outlet_descs)}")
+
+        if parts:
+            return " | ".join(parts)
+        return None
+
+    def _format_inlet_outlet_info(self, node: IRNode) -> Optional[str]:
+        """Generate inlet/outlet semantic info for a node."""
+        if not self._registry:
+            return None
+
+        spec = self._registry.get(node.type)
+        if not spec:
+            return None
+
+        parts = []
+        inlet_descs = [i.description for i in spec.inlets if i.description]
+        outlet_descs = [o.description for o in spec.outlets if o.description]
+
+        if inlet_descs:
+            parts.append(f"in: {', '.join(inlet_descs)}")
+        if outlet_descs:
+            parts.append(f"out: {', '.join(outlet_descs)}")
+
+        if parts:
+            return " | ".join(parts)
+        return None
 
     def serialize_full(self) -> str:
         """Serialize to FULL mode DSL."""
@@ -204,9 +276,17 @@ class DSLSerializer:
                 else:
                     args = self._format_args(node.args)
                     if args:
-                        lines.append(f"{node.id}: {node.type} {args}")
+                        line = f"{node.id}: {node.type} {args}"
                     else:
-                        lines.append(f"{node.id}: {node.type}")
+                        line = f"{node.id}: {node.type}"
+
+                    # Add annotation comment if enabled
+                    if self.annotate:
+                        annotation = self._format_annotation(node)
+                        if annotation:
+                            line += f"  # {annotation}"
+
+                    lines.append(line)
 
         if lines and lines[-1]:
             lines.append("")
@@ -215,7 +295,10 @@ class DSLSerializer:
         if signal_chains:
             lines.append("chains~:")
             for chain in signal_chains:
+                # Build chain description
                 chain_parts = []
+                chain_annotations = []
+
                 for node_id in chain:
                     node = self.ir.get_node(node_id)
                     if node:
@@ -223,6 +306,23 @@ class DSLSerializer:
                         if node.args:
                             args_str = f"({','.join(str(a) for a in node.args)})"
                         chain_parts.append(f"{node_id}:{node.type}{args_str}")
+
+                        # Collect annotations for this chain
+                        if self.annotate and self._registry:
+                            spec = self._registry.get(node.type)
+                            if spec:
+                                # Get a short description for this node
+                                if spec.outlets and spec.outlets[0].description:
+                                    out_desc = spec.outlets[0].description
+                                    if node.args and spec.args:
+                                        # Include first arg value in description
+                                        chain_annotations.append(f"{node.type}: {out_desc}")
+                                    else:
+                                        chain_annotations.append(f"{node.type}: {out_desc}")
+
+                # Add annotation comment if enabled
+                if self.annotate and chain_annotations:
+                    lines.append(f"  # {' -> '.join(chain_annotations)}")
                 lines.append(f"  {' -> '.join(chain_parts)}")
             lines.append("")
 
@@ -338,16 +438,18 @@ class DSLSerializer:
         return self.serialize()
 
 
-def ir_to_dsl(ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT) -> str:
+def ir_to_dsl(ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT,
+               annotate: bool = False) -> str:
     """
     Convert an IR patch to DSL string.
 
     Args:
         ir_patch: The IR patch to convert
         mode: DSL mode (FULL or COMPACT)
+        annotate: Include semantic annotations from registry
 
     Returns:
         DSL string representation
     """
-    serializer = DSLSerializer(ir_patch, mode)
+    serializer = DSLSerializer(ir_patch, mode, annotate=annotate)
     return serializer.serialize()

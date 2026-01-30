@@ -41,6 +41,15 @@ from .registry import ObjectRegistry, ObjectSpec, get_registry
 from .analysis import GraphAnalyzer
 from .index import IRIndex, create_index, index_directory
 from .enrich import EnrichmentData, EnrichmentCache, EnrichmentManager, enrich_ir
+from .docgen import (
+    ArgUsage,
+    ArgDocumentation,
+    AbstractionDoc,
+    ArgExtractor,
+    DocGenerator,
+    generate_doc,
+    generate_doc_from_file,
+)
 from .queries import (
     trace_to_dac,
     trace_from_adc,
@@ -112,6 +121,14 @@ __all__ = [
     'EnrichmentCache',
     'EnrichmentManager',
     'enrich_ir',
+    # Documentation generation
+    'ArgUsage',
+    'ArgDocumentation',
+    'AbstractionDoc',
+    'ArgExtractor',
+    'DocGenerator',
+    'generate_doc',
+    'generate_doc_from_file',
     # Queries
     'trace_to_dac',
     'trace_from_adc',

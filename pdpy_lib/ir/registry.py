@@ -17,11 +17,14 @@ class IoletSpec:
     """Specification for an inlet or outlet."""
     domain: str  # "signal", "control", "signal_or_control"
     name: Optional[str] = None
+    description: Optional[str] = None  # Human-readable description
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"domain": self.domain}
         if self.name:
             d["name"] = self.name
+        if self.description:
+            d["description"] = self.description
         return d
 
 
@@ -33,6 +36,9 @@ class ArgSpec:
     required: bool = False
     optional: bool = True
     default: Optional[Any] = None
+    description: Optional[str] = None  # Human-readable description
+    unit: Optional[str] = None  # "Hz", "ms", "dB", "0-1", "semitones"
+    range: Optional[tuple] = None  # (min, max) or None for unbounded
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -43,6 +49,12 @@ class ArgSpec:
             d["required"] = True
         if self.default is not None:
             d["default"] = self.default
+        if self.description:
+            d["description"] = self.description
+        if self.unit:
+            d["unit"] = self.unit
+        if self.range:
+            d["range"] = list(self.range)
         return d
 
 
@@ -254,101 +266,685 @@ class ObjectRegistry:
             self.register(spec)
 
     def _add_vanilla_dsp_objects(self):
-        """Add vanilla DSP objects."""
-        dsp_objects = [
-            # Oscillators
-            ("osc~", 1, 1, "freq"),
-            ("phasor~", 1, 1, "freq"),
-            ("cos~", 1, 1, None),
-            ("noise~", 0, 1, None),
-            # Math
-            ("+~", 2, 1, None),
-            ("-~", 2, 1, None),
-            ("*~", 2, 1, None),
-            ("/~", 2, 1, None),
-            ("max~", 2, 1, None),
-            ("min~", 2, 1, None),
-            ("clip~", 3, 1, None),
-            ("wrap~", 1, 1, None),
-            ("abs~", 1, 1, None),
-            ("sqrt~", 1, 1, None),
-            ("rsqrt~", 1, 1, None),
-            ("pow~", 2, 1, None),
-            ("log~", 2, 1, None),
-            ("exp~", 1, 1, None),
-            # Filters
-            ("lop~", 2, 1, None),
-            ("hip~", 2, 1, None),
-            ("bp~", 3, 1, None),
-            ("vcf~", 3, 2, None),
-            ("biquad~", 6, 1, None),
-            ("rpole~", 2, 1, None),
-            ("rzero~", 2, 1, None),
-            ("cpole~", 4, 2, None),
-            ("czero~", 4, 2, None),
-            # Delay
-            ("delwrite~", 1, 0, None),
-            ("delread~", 1, 1, None),
-            ("delread4~", 1, 1, None),
-            ("vd~", 1, 1, None),
-            # Table operations
-            ("tabread~", 1, 1, None),
-            ("tabread4~", 1, 1, None),
-            ("tabosc4~", 1, 1, None),
-            ("tabwrite~", 2, 0, None),
-            ("tabplay~", 1, 2, None),
-            ("tabsend~", 1, 0, None),
-            ("tabreceive~", 0, 1, None),
-            # Conversion
-            ("sig~", 1, 1, None),
-            ("line~", 1, 1, None),
-            ("vline~", 1, 1, None),
-            ("snapshot~", 2, 1, None),
-            ("samplerate~", 0, 1, None),
-            ("block~", 0, 0, None),
-            ("switch~", 1, 0, None),
-            # Analysis
-            ("env~", 1, 1, None),
-            ("threshold~", 5, 2, None),
-            ("bonk~", 1, 2, None),
-            ("fiddle~", 1, 4, None),
-            ("sigmund~", 1, -1, None),
-            # I/O
-            ("adc~", 0, -1, None),
-            ("dac~", -1, 0, None),
-            ("readsf~", 1, -1, None),
-            ("writesf~", -1, 0, None),
-        ]
+        """Add vanilla DSP objects with rich semantic metadata."""
 
-        for item in dsp_objects:
-            key = item[0]
-            inlets = item[1]
-            outlets = item[2]
+        # Oscillators
+        self.register(ObjectSpec(
+            key="osc~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="frequency")],
+            outlets=[IoletSpec(domain="signal", description="sine wave output")],
+            args=[ArgSpec(name="frequency", type="number", default=0,
+                         description="oscillator frequency", unit="Hz", range=(0, 20000))],
+        ))
 
-            inlet_specs = []
-            if inlets > 0:
-                for i in range(inlets):
-                    domain = "signal_or_control" if i == 0 else "signal"
-                    inlet_specs.append(IoletSpec(domain=domain))
-            elif inlets == -1:
-                inlet_specs.append(IoletSpec(domain="signal"))
+        self.register(ObjectSpec(
+            key="phasor~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="frequency")],
+            outlets=[IoletSpec(domain="signal", description="sawtooth ramp 0-1")],
+            args=[ArgSpec(name="frequency", type="number", default=0,
+                         description="oscillator frequency", unit="Hz", range=(0, 20000))],
+        ))
 
-            outlet_specs = []
-            if outlets > 0:
-                for i in range(outlets):
-                    outlet_specs.append(IoletSpec(domain="signal"))
-            elif outlets == -1:
-                outlet_specs.append(IoletSpec(domain="signal"))
+        self.register(ObjectSpec(
+            key="cos~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="phase (0-1 = one cycle)")],
+            outlets=[IoletSpec(domain="signal", description="cosine of phase")],
+        ))
 
-            spec = ObjectSpec(
-                key=key,
-                library="pd-vanilla",
-                kind="dsp",
-                domain=Domain.SIGNAL,
-                inlets=inlet_specs,
-                outlets=outlet_specs,
-            )
-            self.register(spec)
+        self.register(ObjectSpec(
+            key="noise~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[],
+            outlets=[IoletSpec(domain="signal", description="white noise (-1 to 1)")],
+        ))
+
+        # Math operations
+        self.register(ObjectSpec(
+            key="+~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="left operand"),
+                IoletSpec(domain="signal", description="right operand (or creation arg)"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="sum")],
+            args=[ArgSpec(name="addend", type="number", default=0, description="value to add")],
+        ))
+
+        self.register(ObjectSpec(
+            key="-~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="left operand"),
+                IoletSpec(domain="signal", description="right operand (subtrahend)"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="difference")],
+            args=[ArgSpec(name="subtrahend", type="number", default=0, description="value to subtract")],
+        ))
+
+        self.register(ObjectSpec(
+            key="*~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="left operand"),
+                IoletSpec(domain="signal", description="right operand (or creation arg)"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="product")],
+            args=[ArgSpec(name="multiplier", type="number", default=0,
+                         description="multiplication factor (often amplitude 0-1)", range=(0, 1))],
+        ))
+
+        self.register(ObjectSpec(
+            key="/~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="dividend"),
+                IoletSpec(domain="signal", description="divisor"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="quotient")],
+            args=[ArgSpec(name="divisor", type="number", default=1, description="value to divide by")],
+        ))
+
+        self.register(ObjectSpec(
+            key="max~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="minimum threshold"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="maximum of inputs")],
+        ))
+
+        self.register(ObjectSpec(
+            key="min~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="maximum threshold"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="minimum of inputs")],
+        ))
+
+        self.register(ObjectSpec(
+            key="clip~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="lower bound"),
+                IoletSpec(domain="signal", description="upper bound"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="clipped signal")],
+            args=[
+                ArgSpec(name="low", type="number", default=-1, description="lower clip bound"),
+                ArgSpec(name="high", type="number", default=1, description="upper clip bound"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="wrap~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="input signal")],
+            outlets=[IoletSpec(domain="signal", description="wrapped to 0-1 range")],
+        ))
+
+        self.register(ObjectSpec(
+            key="abs~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="input signal")],
+            outlets=[IoletSpec(domain="signal", description="absolute value")],
+        ))
+
+        self.register(ObjectSpec(
+            key="sqrt~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="input signal (>=0)")],
+            outlets=[IoletSpec(domain="signal", description="square root")],
+        ))
+
+        self.register(ObjectSpec(
+            key="rsqrt~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="input signal (>0)")],
+            outlets=[IoletSpec(domain="signal", description="reciprocal square root (1/sqrt)")],
+        ))
+
+        self.register(ObjectSpec(
+            key="pow~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="base"),
+                IoletSpec(domain="signal", description="exponent"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="base^exponent")],
+        ))
+
+        self.register(ObjectSpec(
+            key="log~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal (>0)"),
+                IoletSpec(domain="signal", description="base (default e)"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="logarithm")],
+        ))
+
+        self.register(ObjectSpec(
+            key="exp~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="exponent")],
+            outlets=[IoletSpec(domain="signal", description="e^input")],
+        ))
+
+        # Filters
+        self.register(ObjectSpec(
+            key="lop~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="cutoff frequency"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="lowpass filtered signal")],
+            args=[ArgSpec(name="cutoff", type="number", default=0,
+                         description="cutoff frequency", unit="Hz", range=(0, 20000))],
+        ))
+
+        self.register(ObjectSpec(
+            key="hip~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="cutoff frequency"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="highpass filtered signal")],
+            args=[ArgSpec(name="cutoff", type="number", default=0,
+                         description="cutoff frequency", unit="Hz", range=(0, 20000))],
+        ))
+
+        self.register(ObjectSpec(
+            key="bp~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="center frequency"),
+                IoletSpec(domain="signal", description="Q (resonance)"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="bandpass filtered signal")],
+            args=[
+                ArgSpec(name="frequency", type="number", default=0,
+                       description="center frequency", unit="Hz", range=(0, 20000)),
+                ArgSpec(name="Q", type="number", default=1,
+                       description="resonance/bandwidth (higher = narrower)", range=(0.1, 500)),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="vcf~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="center frequency"),
+                IoletSpec(domain="signal", description="Q (resonance)"),
+            ],
+            outlets=[
+                IoletSpec(domain="signal", description="bandpass output (real)"),
+                IoletSpec(domain="signal", description="bandpass output (imaginary)"),
+            ],
+            args=[
+                ArgSpec(name="Q", type="number", default=1,
+                       description="resonance/bandwidth", range=(0.1, 500)),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="biquad~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="control", description="fb1 coefficient"),
+                IoletSpec(domain="control", description="fb2 coefficient"),
+                IoletSpec(domain="control", description="ff1 coefficient"),
+                IoletSpec(domain="control", description="ff2 coefficient"),
+                IoletSpec(domain="control", description="ff3 coefficient"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="filtered signal")],
+        ))
+
+        self.register(ObjectSpec(
+            key="rpole~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="pole coefficient"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="one-pole filtered signal")],
+        ))
+
+        self.register(ObjectSpec(
+            key="rzero~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input signal"),
+                IoletSpec(domain="signal", description="zero coefficient"),
+            ],
+            outlets=[IoletSpec(domain="signal", description="one-zero filtered signal")],
+        ))
+
+        self.register(ObjectSpec(
+            key="cpole~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input real"),
+                IoletSpec(domain="signal", description="input imaginary"),
+                IoletSpec(domain="signal", description="pole real"),
+                IoletSpec(domain="signal", description="pole imaginary"),
+            ],
+            outlets=[
+                IoletSpec(domain="signal", description="output real"),
+                IoletSpec(domain="signal", description="output imaginary"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="czero~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal_or_control", description="input real"),
+                IoletSpec(domain="signal", description="input imaginary"),
+                IoletSpec(domain="signal", description="zero real"),
+                IoletSpec(domain="signal", description="zero imaginary"),
+            ],
+            outlets=[
+                IoletSpec(domain="signal", description="output real"),
+                IoletSpec(domain="signal", description="output imaginary"),
+            ],
+        ))
+
+        # Delay
+        self.register(ObjectSpec(
+            key="delwrite~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="signal to write to delay line")],
+            outlets=[],
+            args=[
+                ArgSpec(name="name", type="symbol", required=True,
+                       description="delay line name"),
+                ArgSpec(name="size", type="number", default=1000,
+                       description="delay buffer size", unit="ms", range=(0, 60000)),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="delread~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="delay time")],
+            outlets=[IoletSpec(domain="signal", description="delayed signal")],
+            args=[
+                ArgSpec(name="name", type="symbol", required=True,
+                       description="delay line name"),
+                ArgSpec(name="delay", type="number", default=0,
+                       description="read delay time", unit="ms"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="delread4~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="delay time")],
+            outlets=[IoletSpec(domain="signal", description="delayed signal (4-point interpolated)")],
+            args=[
+                ArgSpec(name="name", type="symbol", required=True,
+                       description="delay line name"),
+                ArgSpec(name="delay", type="number", default=0,
+                       description="read delay time", unit="ms"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="vd~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="delay time (signal rate)")],
+            outlets=[IoletSpec(domain="signal", description="variable-delayed signal")],
+            args=[ArgSpec(name="name", type="symbol", required=True,
+                         description="delay line name")],
+        ))
+
+        # Table operations
+        self.register(ObjectSpec(
+            key="tabread~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="index into table")],
+            outlets=[IoletSpec(domain="signal", description="table value (no interpolation)")],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabread4~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="index into table")],
+            outlets=[IoletSpec(domain="signal", description="table value (4-point interpolated)")],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabosc4~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal_or_control", description="frequency")],
+            outlets=[IoletSpec(domain="signal", description="wavetable oscillator output")],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name containing waveform")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabwrite~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal", description="signal to record"),
+                IoletSpec(domain="control", description="bang to start recording"),
+            ],
+            outlets=[],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabplay~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="start position or bang")],
+            outlets=[
+                IoletSpec(domain="signal", description="playback signal"),
+                IoletSpec(domain="control", description="bang when finished"),
+            ],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabsend~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="signal to send to array")],
+            outlets=[],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        self.register(ObjectSpec(
+            key="tabreceive~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[],
+            outlets=[IoletSpec(domain="signal", description="signal from array")],
+            args=[ArgSpec(name="table", type="symbol", required=True,
+                         description="array/table name")],
+        ))
+
+        # Conversion / Utilities
+        self.register(ObjectSpec(
+            key="sig~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="control value to convert")],
+            outlets=[IoletSpec(domain="signal", description="signal at control value")],
+            args=[ArgSpec(name="value", type="number", default=0,
+                         description="initial signal value")],
+        ))
+
+        self.register(ObjectSpec(
+            key="line~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="target value and ramp time")],
+            outlets=[IoletSpec(domain="signal", description="ramping signal")],
+        ))
+
+        self.register(ObjectSpec(
+            key="vline~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="target, ramp time, delay")],
+            outlets=[IoletSpec(domain="signal", description="sample-accurate ramping signal")],
+        ))
+
+        self.register(ObjectSpec(
+            key="snapshot~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal", description="signal to sample"),
+                IoletSpec(domain="control", description="bang to sample"),
+            ],
+            outlets=[IoletSpec(domain="control", description="sampled value")],
+        ))
+
+        self.register(ObjectSpec(
+            key="samplerate~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[],
+            outlets=[IoletSpec(domain="control", description="current sample rate")],
+        ))
+
+        self.register(ObjectSpec(
+            key="block~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[],
+            outlets=[],
+            args=[
+                ArgSpec(name="blocksize", type="number", default=64,
+                       description="DSP block size", range=(1, 65536)),
+                ArgSpec(name="overlap", type="number", default=1,
+                       description="overlap factor"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="switch~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="0/1 to disable/enable DSP")],
+            outlets=[],
+        ))
+
+        # Analysis
+        self.register(ObjectSpec(
+            key="env~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="input signal")],
+            outlets=[IoletSpec(domain="control", description="RMS amplitude in dB")],
+            args=[ArgSpec(name="window", type="number", default=1024,
+                         description="analysis window size", unit="samples")],
+        ))
+
+        self.register(ObjectSpec(
+            key="threshold~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal", description="input signal"),
+                IoletSpec(domain="control", description="high threshold"),
+                IoletSpec(domain="control", description="high debounce time"),
+                IoletSpec(domain="control", description="low threshold"),
+                IoletSpec(domain="control", description="low debounce time"),
+            ],
+            outlets=[
+                IoletSpec(domain="control", description="bang when crosses high"),
+                IoletSpec(domain="control", description="bang when crosses low"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="bonk~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="input signal")],
+            outlets=[
+                IoletSpec(domain="control", description="raw attack data"),
+                IoletSpec(domain="control", description="cooked output (velocity)"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="fiddle~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="input signal")],
+            outlets=[
+                IoletSpec(domain="control", description="pitch in MIDI note number"),
+                IoletSpec(domain="control", description="amplitude"),
+                IoletSpec(domain="control", description="attack bang"),
+                IoletSpec(domain="control", description="raw pitch data"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="sigmund~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="input signal")],
+            outlets=[IoletSpec(domain="control", description="analysis output (configurable)")],
+        ))
+
+        # I/O
+        self.register(ObjectSpec(
+            key="adc~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[],
+            outlets=[
+                IoletSpec(domain="signal", description="audio input channel 1"),
+                IoletSpec(domain="signal", description="audio input channel 2"),
+            ],
+        ))
+
+        self.register(ObjectSpec(
+            key="dac~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[
+                IoletSpec(domain="signal", description="audio output channel 1"),
+                IoletSpec(domain="signal", description="audio output channel 2"),
+            ],
+            outlets=[],
+        ))
+
+        self.register(ObjectSpec(
+            key="readsf~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="control", description="open/start/stop messages")],
+            outlets=[
+                IoletSpec(domain="signal", description="audio channel 1"),
+                IoletSpec(domain="control", description="bang when file ends"),
+            ],
+            args=[ArgSpec(name="channels", type="number", default=1,
+                         description="number of audio channels", range=(1, 64))],
+        ))
+
+        self.register(ObjectSpec(
+            key="writesf~",
+            library="pd-vanilla",
+            kind="dsp",
+            domain=Domain.SIGNAL,
+            inlets=[IoletSpec(domain="signal", description="audio channel 1")],
+            outlets=[],
+            args=[ArgSpec(name="channels", type="number", default=1,
+                         description="number of audio channels", range=(1, 64))],
+        ))
 
     def _add_send_receive_objects(self):
         """Add send/receive family objects."""
@@ -588,6 +1184,7 @@ class ObjectRegistry:
                 inlets.append(IoletSpec(
                     domain=inlet.get('domain', 'control'),
                     name=inlet.get('name'),
+                    description=inlet.get('description'),
                 ))
 
             outlets = []
@@ -595,15 +1192,22 @@ class ObjectRegistry:
                 outlets.append(IoletSpec(
                     domain=outlet.get('domain', 'control'),
                     name=outlet.get('name'),
+                    description=outlet.get('description'),
                 ))
 
             args = []
             for arg in obj_data.get('args', []):
+                range_val = arg.get('range')
+                if range_val:
+                    range_val = tuple(range_val)
                 args.append(ArgSpec(
                     name=arg.get('name', ''),
                     type=arg.get('type', 'any'),
                     required=arg.get('required', False),
                     default=arg.get('default'),
+                    description=arg.get('description'),
+                    unit=arg.get('unit'),
+                    range=range_val,
                 ))
 
             symbol_semantics = None
