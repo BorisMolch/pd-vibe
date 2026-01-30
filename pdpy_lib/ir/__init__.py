@@ -58,6 +58,11 @@ from .explain import (
     explain_patch,
     explain_patch_from_file,
 )
+from .visualize import (
+    SVGRenderer,
+    render_svg,
+    render_svg_from_file,
+)
 from .queries import (
     trace_to_dac,
     trace_from_adc,
@@ -144,6 +149,10 @@ __all__ = [
     'PatchExplainer',
     'explain_patch',
     'explain_patch_from_file',
+    # Visualization
+    'SVGRenderer',
+    'render_svg',
+    'render_svg_from_file',
     # Queries
     'trace_to_dac',
     'trace_from_adc',

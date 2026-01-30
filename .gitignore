@@ -28,3 +28,4 @@ examples/*.json
 *-explain.md
 *-doc.md
 *-doc.json
+*.pd.svg
