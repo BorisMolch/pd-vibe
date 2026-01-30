@@ -231,6 +231,64 @@ def screenshot_with_screencapture(
     return None
 
 
+def get_patch_bounds(pd_path: str) -> tuple[int, int, int, int]:
+    """
+    Calculate bounding box of all objects in a patch.
+
+    Returns (min_x, min_y, max_x, max_y) in pixels.
+    """
+    min_x, min_y = float('inf'), float('inf')
+    max_x, max_y = 0, 0
+
+    with open(pd_path, 'r') as f:
+        for line in f:
+            # Parse object/message/text positions
+            # Format: #X obj x y ... or #X msg x y ... or #X text x y ...
+            if line.startswith('#X obj ') or line.startswith('#X msg ') or line.startswith('#X text '):
+                parts = line.split()
+                if len(parts) >= 4:
+                    try:
+                        x = int(parts[2])
+                        y = int(parts[3])
+                        min_x = min(min_x, x)
+                        min_y = min(min_y, y)
+                        # Estimate object width (rough: 100px for objects, more for long names)
+                        obj_width = 100
+                        if len(parts) > 4:
+                            # Estimate based on object name + args
+                            text_len = sum(len(str(p)) for p in parts[4:])
+                            obj_width = max(100, text_len * 8)
+                        max_x = max(max_x, x + obj_width)
+                        max_y = max(max_y, y + 30)  # ~30px height per object
+                    except (ValueError, IndexError):
+                        pass
+            # Also check floatatom, symbolatom, etc.
+            elif line.startswith('#X floatatom ') or line.startswith('#X symbolatom '):
+                parts = line.split()
+                if len(parts) >= 4:
+                    try:
+                        x = int(parts[2])
+                        y = int(parts[3])
+                        min_x = min(min_x, x)
+                        min_y = min(min_y, y)
+                        max_x = max(max_x, x + 80)
+                        max_y = max(max_y, y + 25)
+                    except (ValueError, IndexError):
+                        pass
+
+    # Add padding
+    padding = 50
+    if min_x == float('inf'):
+        return (0, 0, 600, 400)  # Default size
+
+    return (
+        max(0, int(min_x) - padding),
+        max(0, int(min_y) - padding),
+        int(max_x) + padding,
+        int(max_y) + padding
+    )
+
+
 def screenshot_patch_v2(
     pd_path: str,
     output_path: Optional[str] = None,
@@ -239,7 +297,7 @@ def screenshot_patch_v2(
     """
     Screenshot using window name matching.
 
-    Opens patch, finds window by name, screenshots it.
+    Opens patch, finds window by name, resizes to fit content, screenshots it.
     """
     pd_path = Path(pd_path).resolve()
 
@@ -257,6 +315,19 @@ def screenshot_patch_v2(
 
     patch_name = pd_path.stem
 
+    # Calculate required window size from patch content
+    bounds = get_patch_bounds(str(pd_path))
+    req_width = bounds[2] - bounds[0] + 50  # Add some margin
+    req_height = bounds[3] - bounds[1] + 80  # Add title bar + margin
+
+    # Minimum sizes
+    req_width = max(req_width, 400)
+    req_height = max(req_height, 300)
+
+    # Maximum sizes (screen limits)
+    req_width = min(req_width, 1800)
+    req_height = min(req_height, 1200)
+
     # Open the patch
     subprocess.run(["open", "-a", pd_app, str(pd_path)])
     time.sleep(wait_time)
@@ -268,7 +339,11 @@ def screenshot_patch_v2(
             set allWindows to every window
             repeat with w in allWindows
                 if name of w contains "{patch_name}" then
-                    -- Get window bounds
+                    -- Resize window to fit content
+                    set size of w to {{{req_width}, {req_height}}}
+                    delay 0.3
+
+                    -- Get window bounds after resize
                     set pos to position of w
                     set sz to size of w
                     set x to item 1 of pos
