@@ -50,6 +50,14 @@ from .docgen import (
     generate_doc,
     generate_doc_from_file,
 )
+from .explain import (
+    PathSegment,
+    SignalPath,
+    PatchExplanation,
+    PatchExplainer,
+    explain_patch,
+    explain_patch_from_file,
+)
 from .queries import (
     trace_to_dac,
     trace_from_adc,
@@ -129,6 +137,13 @@ __all__ = [
     'DocGenerator',
     'generate_doc',
     'generate_doc_from_file',
+    # Explanation generation
+    'PathSegment',
+    'SignalPath',
+    'PatchExplanation',
+    'PatchExplainer',
+    'explain_patch',
+    'explain_patch_from_file',
     # Queries
     'trace_to_dac',
     'trace_from_adc',
