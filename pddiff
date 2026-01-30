@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""
+pddiff - Semantic diff for Pure Data patches
+
+Compares .pd files between git commits by converting to DSL format,
+making changes much easier to understand than raw .pd diffs.
+
+Usage:
+    pddiff <file.pd>                    # Compare working tree vs HEAD
+    pddiff <file.pd> <commit>           # Compare working tree vs commit
+    pddiff <file.pd> <commit1> <commit2> # Compare two commits
+    pddiff --staged <file.pd>           # Compare staged vs HEAD
+    pddiff --summary <file.pd> ...      # Show summary only (no full diff)
+
+Can also be used as a git difftool:
+    git config diff.pd.command 'pddiff --git-difftool'
+    git config diff.pd.binary true
+    echo '*.pd diff=pd' >> .gitattributes
+"""
+
+import sys
+import os
+import subprocess
+import tempfile
+import difflib
+import argparse
+from pathlib import Path
+
+# Add pdpy to path if running from repo
+script_dir = Path(__file__).parent.resolve()
+if (script_dir / 'pdpy_lib').exists():
+    sys.path.insert(0, str(script_dir))
+
+
+def get_file_at_ref(filepath: str, ref: str) -> str | None:
+    """Get file content at a git ref."""
+    try:
+        result = subprocess.run(
+            ['git', 'show', f'{ref}:{filepath}'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def get_staged_content(filepath: str) -> str | None:
+    """Get staged content of a file."""
+    try:
+        result = subprocess.run(
+            ['git', 'show', f':{filepath}'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def get_relative_path(filepath: str) -> str:
+    """Get path relative to git root."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        git_root = Path(result.stdout.strip())
+        file_path = Path(filepath).resolve()
+        return str(file_path.relative_to(git_root))
+    except (subprocess.CalledProcessError, ValueError):
+        return filepath
+
+
+def pd_content_to_dsl(content: str, name: str = "patch") -> str:
+    """Convert .pd file content to DSL string."""
+    from pdpy_lib.patching.pdpy import PdPy
+    from pdpy_lib.utilities.utils import parsePdFileLines
+    from pdpy_lib.ir.dsl import ir_to_dsl, DSLMode
+
+    try:
+        pd_lines = parsePdFileLines(content)
+        pdpy = PdPy(name=name, pd_lines=pd_lines)
+        ir = pdpy.to_ir(patch_path=name)
+        return ir_to_dsl(ir, DSLMode.COMPACT)
+    except Exception as e:
+        return f"# Error converting to DSL: {e}\n\n{content}"
+
+
+def colorize_diff(diff_lines: list[str]) -> str:
+    """Add ANSI colors to diff output."""
+    colored = []
+    for line in diff_lines:
+        if line.startswith('+++') or line.startswith('---'):
+            colored.append(f'\033[1m{line}\033[0m')  # Bold
+        elif line.startswith('@@'):
+            colored.append(f'\033[36m{line}\033[0m')  # Cyan
+        elif line.startswith('+'):
+            colored.append(f'\033[32m{line}\033[0m')  # Green
+        elif line.startswith('-'):
+            colored.append(f'\033[31m{line}\033[0m')  # Red
+        else:
+            colored.append(line)
+    return '\n'.join(colored)
+
+
+def generate_diff(old_content: str, new_content: str,
+                  old_label: str, new_label: str,
+                  context: int = 3) -> tuple[str, dict]:
+    """Generate unified diff and summary statistics."""
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=old_label,
+        tofile=new_label,
+        n=context
+    ))
+
+    # Calculate stats
+    added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
+    removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
+
+    stats = {
+        'added': added,
+        'removed': removed,
+        'changed': min(added, removed),
+        'has_changes': len(diff) > 0
+    }
+
+    return ''.join(diff), stats
+
+
+def analyze_semantic_changes(old_dsl: str, new_dsl: str) -> list[str]:
+    """Analyze what changed semantically."""
+    changes = []
+
+    old_lines = set(old_dsl.splitlines())
+    new_lines = set(new_dsl.splitlines())
+
+    added_lines = new_lines - old_lines
+    removed_lines = old_lines - new_lines
+
+    # Count by category
+    nodes_added = sum(1 for l in added_lines if '::' in l and not l.startswith('#'))
+    nodes_removed = sum(1 for l in removed_lines if '::' in l and not l.startswith('#'))
+    wires_added = sum(1 for l in added_lines if ' -> ' in l)
+    wires_removed = sum(1 for l in removed_lines if ' -> ' in l)
+    symbols_added = sum(1 for l in added_lines if l.strip().startswith('symbols:') or ('(global)' in l or '(local)' in l))
+    symbols_removed = sum(1 for l in removed_lines if l.strip().startswith('symbols:') or ('(global)' in l or '(local)' in l))
+
+    if nodes_added or nodes_removed:
+        changes.append(f"Nodes: +{nodes_added} -{nodes_removed}")
+    if wires_added or wires_removed:
+        changes.append(f"Wires: +{wires_added} -{wires_removed}")
+    if symbols_added or symbols_removed:
+        changes.append(f"Symbols: +{symbols_added} -{symbols_removed}")
+
+    return changes
+
+
+def diff_pd_files(filepath: str, ref1: str | None = None, ref2: str | None = None,
+                  staged: bool = False, summary_only: bool = False,
+                  no_color: bool = False) -> int:
+    """Compare a .pd file between refs and show DSL diff."""
+
+    rel_path = get_relative_path(filepath)
+    abs_path = Path(filepath).resolve()
+
+    # Determine what to compare
+    if staged:
+        # Compare staged vs HEAD
+        old_content = get_file_at_ref(rel_path, 'HEAD')
+        new_content = get_staged_content(rel_path)
+        old_label = f"a/{rel_path} (HEAD)"
+        new_label = f"b/{rel_path} (staged)"
+    elif ref1 is None:
+        # Compare working tree vs HEAD
+        old_content = get_file_at_ref(rel_path, 'HEAD')
+        if abs_path.exists():
+            new_content = abs_path.read_text()
+        else:
+            new_content = None
+        old_label = f"a/{rel_path} (HEAD)"
+        new_label = f"b/{rel_path} (working tree)"
+    elif ref2 is None:
+        # Compare working tree vs ref1
+        old_content = get_file_at_ref(rel_path, ref1)
+        if abs_path.exists():
+            new_content = abs_path.read_text()
+        else:
+            new_content = None
+        old_label = f"a/{rel_path} ({ref1})"
+        new_label = f"b/{rel_path} (working tree)"
+    else:
+        # Compare ref1 vs ref2
+        old_content = get_file_at_ref(rel_path, ref1)
+        new_content = get_file_at_ref(rel_path, ref2)
+        old_label = f"a/{rel_path} ({ref1})"
+        new_label = f"b/{rel_path} ({ref2})"
+
+    # Handle missing files
+    if old_content is None and new_content is None:
+        print(f"Error: Cannot find {rel_path} at specified refs", file=sys.stderr)
+        return 1
+
+    if old_content is None:
+        old_content = ""
+        old_label = "/dev/null"
+
+    if new_content is None:
+        new_content = ""
+        new_label = "/dev/null"
+
+    # Convert to DSL
+    name = Path(filepath).stem
+    old_dsl = pd_content_to_dsl(old_content, name) if old_content else ""
+    new_dsl = pd_content_to_dsl(new_content, name) if new_content else ""
+
+    # Generate diff
+    diff_text, stats = generate_diff(old_dsl, new_dsl, old_label, new_label)
+
+    if not stats['has_changes']:
+        print(f"No changes in {rel_path}")
+        return 0
+
+    # Analyze semantic changes
+    semantic_changes = analyze_semantic_changes(old_dsl, new_dsl)
+
+    # Print header
+    print(f"\n{'=' * 60}")
+    print(f"Semantic diff: {rel_path}")
+    print(f"{'=' * 60}")
+
+    # Print summary
+    print(f"\nSummary: +{stats['added']} -{stats['removed']} lines")
+    if semantic_changes:
+        print(f"Changes: {', '.join(semantic_changes)}")
+
+    if not summary_only:
+        print()
+        if no_color or not sys.stdout.isatty():
+            print(diff_text)
+        else:
+            print(colorize_diff(diff_text.splitlines()))
+
+    return 0
+
+
+def git_difftool_mode(args: list[str]) -> int:
+    """Handle git difftool invocation.
+
+    Git difftool passes: path old-file old-hex old-mode new-file new-hex new-mode
+    """
+    if len(args) < 7:
+        print("Error: Invalid git difftool arguments", file=sys.stderr)
+        return 1
+
+    path, old_file, old_hex, old_mode, new_file, new_hex, new_mode = args[:7]
+
+    # Read the temp files git provides
+    old_content = Path(old_file).read_text() if Path(old_file).exists() else ""
+    new_content = Path(new_file).read_text() if Path(new_file).exists() else ""
+
+    name = Path(path).stem
+    old_dsl = pd_content_to_dsl(old_content, name) if old_content else ""
+    new_dsl = pd_content_to_dsl(new_content, name) if new_content else ""
+
+    diff_text, stats = generate_diff(
+        old_dsl, new_dsl,
+        f"a/{path}",
+        f"b/{path}"
+    )
+
+    if stats['has_changes']:
+        if sys.stdout.isatty():
+            print(colorize_diff(diff_text.splitlines()))
+        else:
+            print(diff_text)
+
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Semantic diff for Pure Data patches",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    pddiff main.pd                     # Working tree vs HEAD
+    pddiff main.pd HEAD~1              # Working tree vs previous commit
+    pddiff main.pd HEAD~2 HEAD         # Compare two commits
+    pddiff --staged main.pd            # Staged changes vs HEAD
+    pddiff --summary *.pd              # Summary of all .pd changes
+
+Git difftool setup:
+    git config diff.pd.command 'pddiff --git-difftool'
+    echo '*.pd diff=pd' >> .gitattributes
+        """
+    )
+    parser.add_argument('files', nargs='*', help='File(s) to diff')
+    parser.add_argument('--staged', '-s', action='store_true',
+                        help='Compare staged changes vs HEAD')
+    parser.add_argument('--summary', action='store_true',
+                        help='Show summary only, no full diff')
+    parser.add_argument('--no-color', action='store_true',
+                        help='Disable colored output')
+    parser.add_argument('--git-difftool', action='store_true',
+                        help='Git difftool mode (internal use)')
+
+    args, remaining = parser.parse_known_args()
+
+    if args.git_difftool:
+        return git_difftool_mode(remaining)
+
+    if not args.files:
+        parser.print_help()
+        return 1
+
+    # Parse files and refs
+    pd_files = []
+    refs = []
+
+    for f in args.files:
+        if Path(f).suffix == '.pd' or Path(f).exists():
+            pd_files.append(f)
+        else:
+            refs.append(f)
+
+    if not pd_files:
+        print("Error: No .pd files specified", file=sys.stderr)
+        return 1
+
+    ref1 = refs[0] if len(refs) > 0 else None
+    ref2 = refs[1] if len(refs) > 1 else None
+
+    exit_code = 0
+    for pd_file in pd_files:
+        result = diff_pd_files(
+            pd_file,
+            ref1=ref1,
+            ref2=ref2,
+            staged=args.staged,
+            summary_only=args.summary,
+            no_color=args.no_color
+        )
+        if result != 0:
+            exit_code = result
+
+    return exit_code
+
+
+if __name__ == '__main__':
+    sys.exit(main())
