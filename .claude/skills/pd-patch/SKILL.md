@@ -27,6 +27,13 @@ Analyze and edit Pure Data (.pd) patches using the IR (Intermediate Representati
 # Generates: file.pd.svg (visual diagram of patch)
 ```
 
+### Take screenshot using Pd (macOS)
+```bash
+/Users/borismo/pdpy/pd2ir --screenshot <file.pd>
+# Generates: file.pd.png (actual Pd rendering)
+# Requires Pure Data installed, opens/closes Pd automatically
+```
+
 ### Generate documentation for an abstraction
 ```bash
 /Users/borismo/pdpy/pd2ir --doc <file.pd>        # Markdown: file.pd-doc.md
@@ -147,11 +154,37 @@ cycles: [node1,node2,node3]
 
 Pd counts objects using sequential indices. **This is the trickiest part of editing .pd files.**
 
-**Rules:**
-1. Only count `#X obj`, `#X msg`, `#X floatatom`, `#X symbolatom`, `#X text` lines
-2. Do NOT count `#N canvas` (subpatch headers), `#X restore`, or `#X connect` lines
-3. **Subpatch contents are counted but scoped** - inside `#N canvas ... #X restore`, indices reset for connections within that subpatch, but the outer patch sees the subpatch as ONE object
-4. Each `#N canvas ... #X restore` block counts as 1 object in the parent scope
+**What to count (creates canvas items):**
+- `#X obj` - objects
+- `#X msg` - messages
+- `#X text` - comments (COUNTS AS OBJECT!)
+- `#X floatatom` - number boxes
+- `#X symbolatom` - symbol boxes
+- `#X array` - arrays
+
+**What NOT to count:**
+- `#N canvas` - canvas/subpatch headers
+- `#X restore` - subpatch close
+- `#X connect` - connections
+- `#X coords` - GOP settings
+
+**Example with text comment:**
+```
+#N canvas 0 0 400 300 10;       <- NOT counted (canvas header)
+#X obj 50 50 inlet;             <- index 0
+#X obj 50 100 + 1;              <- index 1
+#X text 150 100 this adds one;  <- index 2 (comment COUNTS!)
+#X obj 50 150 outlet;           <- index 3
+#X connect 0 0 1 0;             <- inlet(0) -> +(1)
+#X connect 1 0 3 0;             <- +(1) -> outlet(3), NOT 2!
+```
+
+**Common mistake:** Ignoring `#X text` and thinking outlet is index 2. The connection `#X connect 1 0 2 0` would connect to the comment (broken patch).
+
+**Subpatch scoping:**
+- Inside `#N canvas ... #X restore`, indices reset for that subpatch
+- The outer patch sees the entire subpatch block as ONE object
+- Each `#N canvas ... #X restore` block counts as 1 object in parent scope
 
 **Example with subpatch:**
 ```

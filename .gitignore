@@ -29,3 +29,4 @@ examples/*.json
 *-doc.md
 *-doc.json
 *.pd.svg
+*.pd.png
