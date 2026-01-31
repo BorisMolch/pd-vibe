@@ -10,6 +10,11 @@ Usage:
     pdpatch connect <patch.pd> <src> <dst>     # Connect by ID or type
     pdpatch list <patch.pd>                    # List objects with IDs
     pdpatch delete <patch.pd> <id>             # Delete object by ID
+
+Subpatch support:
+    pdpatch list <patch.pd> -s envelope        # List objects in subpatch
+    pdpatch add <patch.pd> osc~ 440 -s synth   # Add to subpatch
+    pdpatch list <patch.pd> -s synth/filter    # Nested subpatch path
 """
 
 import sys
@@ -22,6 +27,7 @@ if (script_dir / 'pdpy_lib').exists():
     sys.path.insert(0, str(script_dir))
 
 from pdpy_lib.patching.pdpy import PdPy
+from pdpy_lib.patching.canvas import Canvas
 from pdpy_lib.objects.obj import Obj
 from pdpy_lib.objects.msg import Msg
 from pdpy_lib.objects.comment import Comment
@@ -43,34 +49,90 @@ def save_patch(pdpy: PdPy, path: Path):
         f.write(pdpy.__pd__())
 
 
-def get_canvas(pdpy: PdPy):
-    """Get the root canvas."""
-    return pdpy.root if hasattr(pdpy, 'root') else pdpy
+def find_canvas(pdpy: PdPy, subpatch_path: str = None):
+    """Find a canvas by subpatch path (e.g., 'envelope' or 'synth/filter').
+
+    Returns (canvas, error_message). If error_message is not None, canvas is None.
+    """
+    canvas = pdpy.root if hasattr(pdpy, 'root') else pdpy
+
+    if not subpatch_path:
+        return canvas, None
+
+    # Split path into components (e.g., "synth/filter" -> ["synth", "filter"])
+    parts = subpatch_path.split('/')
+
+    for part in parts:
+        # Look for a Canvas node with matching name
+        found = None
+        for node in getattr(canvas, 'nodes', []):
+            if isinstance(node, Canvas) or hasattr(node, 'nodes'):
+                node_name = getattr(node, 'name', None)
+                if node_name == part:
+                    found = node
+                    break
+
+        if found is None:
+            # List available subpatches for better error message
+            available = []
+            for node in getattr(canvas, 'nodes', []):
+                if isinstance(node, Canvas) or hasattr(node, 'nodes'):
+                    name = getattr(node, 'name', None)
+                    if name:
+                        available.append(name)
+
+            if available:
+                return None, f"Subpatch '{part}' not found. Available: {', '.join(available)}"
+            else:
+                return None, f"Subpatch '{part}' not found. No subpatches in current canvas."
+
+        canvas = found
+
+    return canvas, None
 
 
-def list_objects(pdpy: PdPy) -> list:
+def get_canvas(pdpy: PdPy, subpatch: str = None):
+    """Get the target canvas (root or subpatch)."""
+    canvas, error = find_canvas(pdpy, subpatch)
+    if error:
+        print(f"Error: {error}", file=sys.stderr)
+        return None
+    return canvas
+
+
+def list_objects(canvas) -> list:
     """List all objects with their IDs."""
-    canvas = get_canvas(pdpy)
     objects = []
 
     for i, node in enumerate(getattr(canvas, 'nodes', [])):
-        obj_type = getattr(node, 'className', getattr(node, '__pdpy__', '?'))
-        args = getattr(node, 'args', [])
-        args_str = ' '.join(str(a) for a in args) if args else ''
+        # Check if it's a subpatch (Canvas)
+        is_subpatch = isinstance(node, Canvas) or hasattr(node, 'nodes')
+
+        if is_subpatch:
+            obj_type = f"pd {getattr(node, 'name', '?')}"
+            args_str = ''
+            child_count = len(getattr(node, 'nodes', []))
+        else:
+            obj_type = getattr(node, 'className', getattr(node, '__pdpy__', '?'))
+            args = getattr(node, 'args', [])
+            args_str = ' '.join(str(a) for a in args) if args else ''
+            child_count = 0
+
         obj_id = getattr(node, 'id', i)
         objects.append({
             'id': obj_id,
             'index': i,
             'type': obj_type,
             'args': args_str,
+            'is_subpatch': is_subpatch,
+            'child_count': child_count,
         })
 
     return objects
 
 
-def find_object(pdpy: PdPy, identifier: str):
+def find_object(canvas, identifier: str):
     """Find object by ID, index, or type+args."""
-    canvas = get_canvas(pdpy)
     nodes = getattr(canvas, 'nodes', [])
 
     # Try as numeric ID/index
@@ -93,6 +155,10 @@ def find_object(pdpy: PdPy, identifier: str):
 
     for node in nodes:
         node_type = getattr(node, 'className', '')
+        # Also check subpatch names
+        if not node_type and hasattr(node, 'name'):
+            node_type = f"pd {node.name}"
+
         if node_type == obj_type:
             if obj_args is None:
                 return node
@@ -126,7 +192,9 @@ def cmd_add(args):
         return 1
 
     pdpy = load_patch(path)
-    canvas = get_canvas(pdpy)
+    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
+    if canvas is None:
+        return 1
 
     # Create the object
     obj_type = args.type
@@ -156,7 +224,8 @@ def cmd_add(args):
     save_patch(pdpy, path)
 
     # Print the assigned ID
-    print(f"Added [{obj.id}]: {obj_type} {' '.join(str(a) for a in obj_args)}")
+    subpatch_info = f" (in {args.subpatch})" if getattr(args, 'subpatch', None) else ""
+    print(f"Added [{obj.id}]: {obj_type} {' '.join(str(a) for a in obj_args)}{subpatch_info}")
     return 0
 
 
@@ -169,11 +238,13 @@ def cmd_connect(args):
         return 1
 
     pdpy = load_patch(path)
-    canvas = get_canvas(pdpy)
+    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
+    if canvas is None:
+        return 1
 
     # Find source and destination
-    src = find_object(pdpy, args.src)
-    dst = find_object(pdpy, args.dst)
+    src = find_object(canvas, args.src)
+    dst = find_object(canvas, args.dst)
 
     if src is None:
         print(f"Source not found: {args.src}", file=sys.stderr)
@@ -192,8 +263,8 @@ def cmd_connect(args):
 
     save_patch(pdpy, path)
 
-    src_type = getattr(src, 'className', '?')
-    dst_type = getattr(dst, 'className', '?')
+    src_type = getattr(src, 'className', getattr(src, 'name', '?'))
+    dst_type = getattr(dst, 'className', getattr(dst, 'name', '?'))
     print(f"Connected: [{src.id}]{src_type}:{src_port} -> [{dst.id}]{dst_type}:{dst_port}")
     return 0
 
@@ -207,19 +278,27 @@ def cmd_list(args):
         return 1
 
     pdpy = load_patch(path)
-    objects = list_objects(pdpy)
+    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
+    if canvas is None:
+        return 1
+
+    objects = list_objects(canvas)
+
+    subpatch_info = f" [{args.subpatch}]" if getattr(args, 'subpatch', None) else ""
 
     if not objects:
-        print("(empty patch)")
+        print(f"(empty canvas{subpatch_info})")
         return 0
 
-    print(f"Objects in {path.name}:")
+    print(f"Objects in {path.name}{subpatch_info}:")
     for obj in objects:
         args_str = f" {obj['args']}" if obj['args'] else ""
-        print(f"  [{obj['id']}] {obj['type']}{args_str}")
+        if obj['is_subpatch']:
+            print(f"  [{obj['id']}] {obj['type']} ({obj['child_count']} objects)")
+        else:
+            print(f"  [{obj['id']}] {obj['type']}{args_str}")
 
     # Also show connections
-    canvas = get_canvas(pdpy)
     edges = getattr(canvas, 'edges', [])
     if edges:
         print(f"\nConnections:")
@@ -242,9 +321,11 @@ def cmd_delete(args):
         return 1
 
     pdpy = load_patch(path)
-    canvas = get_canvas(pdpy)
+    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
+    if canvas is None:
+        return 1
 
-    obj = find_object(pdpy, args.id)
+    obj = find_object(canvas, args.id)
     if obj is None:
         print(f"Object not found: {args.id}", file=sys.stderr)
         return 1
@@ -252,7 +333,7 @@ def cmd_delete(args):
     # Remove from nodes
     nodes = getattr(canvas, 'nodes', [])
     obj_id = obj.id
-    obj_type = getattr(obj, 'className', '?')
+    obj_type = getattr(obj, 'className', getattr(obj, 'name', '?'))
 
     if obj in nodes:
         nodes.remove(obj)
@@ -278,6 +359,12 @@ def cmd_delete(args):
     return 0
 
 
+def add_subpatch_arg(parser):
+    """Add the --subpatch argument to a parser."""
+    parser.add_argument('-s', '--subpatch',
+                       help='Target subpatch (e.g., "envelope" or "synth/filter")')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="CLI for programmatic Pure Data patch editing",
@@ -291,6 +378,11 @@ Examples:
     pdpatch connect synth.pd 0 1            # Connect by ID
     pdpatch connect synth.pd "osc~" "dac~"  # Connect by type
     pdpatch delete synth.pd 0               # Delete object
+
+Subpatch examples:
+    pdpatch list synth.pd -s envelope       # List subpatch contents
+    pdpatch add synth.pd line~ -s envelope  # Add to subpatch
+    pdpatch list synth.pd -s voice/filter   # Nested subpatch
         """
     )
 
@@ -306,6 +398,7 @@ Examples:
     p_add.add_argument('patch', help='Patch file')
     p_add.add_argument('type', help='Object type (osc~, dac~, +, etc.)')
     p_add.add_argument('args', nargs='*', help='Object arguments')
+    add_subpatch_arg(p_add)
 
     # connect
     p_connect = subparsers.add_parser('connect', help='Connect two objects')
@@ -314,15 +407,18 @@ Examples:
     p_connect.add_argument('dst', help='Destination object')
     p_connect.add_argument('-o', '--outlet', type=int, help='Source outlet (default: 0)')
     p_connect.add_argument('-i', '--inlet', type=int, help='Destination inlet (default: 0)')
+    add_subpatch_arg(p_connect)
 
     # list
     p_list = subparsers.add_parser('list', help='List objects in patch')
     p_list.add_argument('patch', help='Patch file')
+    add_subpatch_arg(p_list)
 
     # delete
     p_delete = subparsers.add_parser('delete', help='Delete object from patch')
     p_delete.add_argument('patch', help='Patch file')
     p_delete.add_argument('id', help='Object ID or type')
+    add_subpatch_arg(p_delete)
 
     args = parser.parse_args()
 

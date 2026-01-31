@@ -513,7 +513,75 @@ The `pdpatch` CLI provides programmatic patch editing without manual index count
 /Users/borismo/pdpy/pdpatch delete synth.pd "dac~"  # By type
 ```
 
-**Note:** pdpatch handles object index counting automatically - no need to manually track indices.
+### Subpatch support
+```bash
+/Users/borismo/pdpy/pdpatch list synth.pd -s envelope     # List subpatch contents
+/Users/borismo/pdpy/pdpatch add synth.pd line~ -s envelope  # Add to subpatch
+/Users/borismo/pdpy/pdpatch connect synth.pd 0 1 -s envelope  # Connect in subpatch
+/Users/borismo/pdpy/pdpatch list synth.pd -s voice/filter   # Nested subpatch path
+```
+
+### When to use pdpatch vs direct .pd editing
+
+| Use pdpatch | Use direct .pd editing |
+|-------------|------------------------|
+| Adding objects to existing patches | Complex multi-object changes |
+| Connecting objects by ID/type | Precise position control |
+| Quick prototyping | Editing arrays/data structures |
+| Batch operations via scripts | When pdpatch shows errors |
+
+**Note:** pdpatch handles object index counting automatically. For complex edits, use `pd2ir -i` to get object indices, then edit the .pd file directly.
+
+## Common Synth Patterns
+
+### ADSR Envelope Pattern
+```
+[trigger] -> [t b b] -> [del $1] (retrigger delay)
+                    -> [vline~] -> [*~] (VCA)
+```
+**Critical:** The `[del]` must be stopped on retrigger to prevent double-triggers:
+```
+[t b b] -> [0, stop( -> [del 10]
+        -> [attack, decay, sustain( -> [vline~]
+```
+
+### VCA (Voltage-Controlled Amplifier)
+```
+[osc~] -> [*~] -> [dac~]
+           ^
+      [envelope]
+```
+**Anti-pattern:** VCA with constant gain (no envelope input):
+```
+[osc~] -> [*~ 0.5] -> [dac~]  # No volume control!
+```
+If audio bleeds, check that the `*~` multiplier receives envelope modulation.
+
+### Retrigger-Safe Envelope
+```
+#X obj 50 50 inlet;
+#X obj 50 90 t b b;
+#X msg 150 90 stop;
+#X obj 50 130 del 10;
+#X msg 50 170 1 10 \, 0.7 50 \, 0 200;
+#X obj 50 210 vline~;
+#X obj 50 250 outlet~;
+#X connect 0 0 1 0;
+#X connect 1 0 3 0;
+#X connect 1 1 2 0;
+#X connect 2 0 3 0;
+#X connect 3 0 4 0;
+#X connect 4 0 5 0;
+#X connect 5 0 6 0;
+```
+The `[t b b]` sends a bang to `[del]` AND sends "stop" to cancel any pending delay.
+
+### Debugging Audio Bleed
+
+1. **Check state elements:** `pd2ir --state patch.pd`
+2. **Trace signal paths:** Look for `*~` objects without envelope input
+3. **Kill feedback first:** Set multipliers to 0 before clearing buffers
+4. **Check retrigger logic:** `[del]` without `stop` causes double-triggers
 
 ## Resources
 
