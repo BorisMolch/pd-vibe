@@ -21,6 +21,24 @@ Analyze and edit Pure Data (.pd) patches using the IR (Intermediate Representati
 # Generates: file.pd.svg (visual diagram of patch)
 ```
 
+### Analyze stateful elements (debugging audio bleed)
+```bash
+/Users/borismo/pdpy/pd2ir --state <file.pd>
+```
+
+Shows delay buffers, feedback loops, tables, and how to silence them:
+```
+## Delay Buffers
+- **mydelay** (500ms)
+  - Feedback: `c0::hd2d0b3ee` (gain: 0.5)
+  - **To silence:** Set `c0::hd2d0b3ee` to 0, then `; mydelay const 0`
+
+## Silence Sequence
+1. Set `c0::hd2d0b3ee` to 0 (kill feedback)
+2. Wait ~10ms for buffers to drain
+3. `; mydelay const 0`
+```
+
 ### Take screenshot using Pd (macOS)
 ```bash
 /Users/borismo/pdpy/pd2ir --screenshot <file.pd>
@@ -144,6 +162,45 @@ cycles: [node1,node2,node3]
 ```
 (connect object 0's outlet 0 to object 1's inlet 0)
 
+### Message Syntax
+
+**Basic messages:**
+```
+#X msg 100 100 bang;           # sends "bang"
+#X msg 100 100 440;            # sends number 440
+#X msg 100 100 set \$1;        # sends "set" + first inlet value
+```
+
+**Semicolon (;) sends to named receivers:**
+```
+#X msg 100 100 \; pd dsp 1;           # turn on DSP
+#X msg 100 100 \; pd dsp 0;           # turn off DSP
+#X msg 100 100 \; myarray const 0;    # zero out array "myarray"
+#X msg 100 100 \; myarray resize 44100;  # resize array
+#X msg 100 100 \; myvalue 0.5;        # send 0.5 to [r myvalue]
+```
+
+**Multiple commands in one message:**
+```
+#X msg 100 100 \; array1 const 0 \; array2 const 0;  # zero two arrays
+```
+
+**Dollar signs ($) in messages vs comments:**
+- In messages: `\$1` = argument substitution (becomes value of inlet)
+- In comments: `\$1` = literal text for documentation
+```
+#X msg 100 100 set \$1 \$2;           # substitutes inlet values
+#X text 100 100 \$1: track name;      # literal "$1:" for docs
+```
+
+**Common array operations:**
+```
+\; arrayname const 0       # fill with zeros
+\; arrayname resize N      # resize to N samples
+\; arrayname normalize 1   # normalize to peak of 1
+\; arrayname sinesum N 1 0.5 0.25  # fill with harmonics
+```
+
 ### Object Index Counting (CRITICAL)
 
 Pd counts objects using sequential indices. **This is the trickiest part of editing .pd files.**
@@ -213,6 +270,25 @@ Or generate only IR (skip slower DSL generation):
 /Users/borismo/pdpy/pd2ir --no-dsl <file.pd>
 ```
 
+### DSL with object indices (for editing)
+
+Show .pd file object indices in DSL output - essential for adding connections:
+```bash
+/Users/borismo/pdpy/pd2ir -i <file.pd>
+```
+
+Example output with indices:
+```
+c0::h60eed844[0]: osc~ 440
+c0::hdbab8f31[3]: lop~ 1000
+c0::hd2d0b3ee[5]: *~ 0.5
+```
+
+The `[N]` suffix is the object index used in `#X connect` statements. To connect osc~ to lop~:
+```
+#X connect 0 0 3 0;  # osc~ outlet 0 -> lop~ inlet 0
+```
+
 ### Annotated DSL output
 
 Add semantic annotations (parameter meanings, units) to the DSL:
@@ -235,6 +311,72 @@ grep "#X obj 100 200" file.pd  # Find object at position (100, 200)
 ```
 
 This is useful when you know where something is visually but not its index.
+
+## Common Pitfalls
+
+### Audio bleeding after stop
+
+**Problem:** Audio continues playing after you "stop" a patch.
+
+**Cause:** Stateful elements retain audio:
+- **Delay buffers** (`delwrite~`) keep their contents
+- **Feedback loops** (`*~ 0.85` feeding back to `delwrite~`) recirculate audio
+- **Sample tables** keep loaded audio
+
+**Solution:** Kill feedback FIRST, then clear buffers:
+```
+1. Set feedback multiplier to 0:  \; feedback-gain 0
+2. Wait one buffer cycle (~10ms)
+3. Zero the delay buffer:  \; delaybuffer const 0
+```
+
+If you clear the buffer while feedback is active, the feedback loop immediately refills it.
+
+### Feedback loop detection
+
+When DSL shows `cycles:`, you have a feedback loop. Example:
+```
+cycles: [delwrite~:buff,vd~:buff,*~]
+```
+
+This means: `delwrite~` → `vd~` reads it → `*~` scales it → back to `delwrite~`
+
+**Safe feedback:** The `*~` multiplier should be < 1.0 (e.g., 0.85) or signal grows infinitely.
+
+**To silence:** The multiplier node is your kill switch. Set it to 0 before clearing buffers.
+
+### $0 vs $1 confusion
+
+- `$0` = **unique instance ID** (different for each patch copy) - use for internal send/receive
+- `$1`, `$2`, etc. = **creation arguments** passed when instantiating the abstraction
+
+```
+[mysynth foo 440]  ->  $1=foo, $2=440, $0=1001 (unique)
+[mysynth bar 880]  ->  $1=bar, $2=880, $0=1002 (different!)
+```
+
+Use `$0-` prefix for internal communication that shouldn't leak between instances:
+```
+[s $0-internal]  # only this instance receives
+[s $1-output]    # shared based on argument
+```
+
+### Hot vs cold inlets
+
+Most Pd objects only trigger output when the **left (hot) inlet** receives a message:
+- Hot inlet (leftmost): triggers computation
+- Cold inlets: store value for next computation
+
+```
+[+ ]
+ |  \
+hot  cold
+
+Sending to cold inlet stores the value but doesn't output anything.
+Sending to hot inlet adds stored value and outputs result.
+```
+
+**Common mistake:** Sending to both inlets simultaneously via `[t b b]` - order matters! Right-to-left execution means cold inlet gets set first.
 
 ## Workflow
 
@@ -339,3 +481,4 @@ Then `git diff` will show semantic diffs for .pd files.
 - Object registry: `/Users/borismo/pdpy/data/objects.vanilla.json`
 - IR module: `/Users/borismo/pdpy/pdpy_lib/ir/`
 - Docgen module: `/Users/borismo/pdpy/pdpy_lib/ir/docgen.py`
+- State analysis: `/Users/borismo/pdpy/pdpy_lib/ir/state.py`

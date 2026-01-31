@@ -55,6 +55,15 @@ from .visualize import (
     render_svg,
     render_svg_from_file,
 )
+from .state import (
+    DelayBuffer,
+    FeedbackLoop,
+    TableBuffer,
+    StateAnalysis,
+    StateAnalyzer,
+    analyze_state,
+    analyze_state_from_file,
+)
 from .queries import (
     trace_to_dac,
     trace_from_adc,
@@ -138,6 +147,14 @@ __all__ = [
     'SVGRenderer',
     'render_svg',
     'render_svg_from_file',
+    # State analysis
+    'DelayBuffer',
+    'FeedbackLoop',
+    'TableBuffer',
+    'StateAnalysis',
+    'StateAnalyzer',
+    'analyze_state',
+    'analyze_state_from_file',
     # Queries
     'trace_to_dac',
     'trace_from_adc',

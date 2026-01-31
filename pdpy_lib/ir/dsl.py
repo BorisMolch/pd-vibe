@@ -35,7 +35,7 @@ class DSLSerializer:
     """Serializes IR to DSL format."""
 
     def __init__(self, ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT,
-                 annotate: bool = False):
+                 annotate: bool = False, show_indices: bool = False):
         """
         Initialize DSL serializer.
 
@@ -43,10 +43,12 @@ class DSLSerializer:
             ir_patch: The IR patch to serialize
             mode: DSL mode (FULL or COMPACT)
             annotate: Include semantic annotations from registry
+            show_indices: Include original .pd file object indices
         """
         self.ir = ir_patch
         self.mode = mode
         self.annotate = annotate
+        self.show_indices = show_indices
         self._analyzer: Optional[GraphAnalyzer] = None
         self._registry = get_registry() if annotate else None
 
@@ -261,24 +263,29 @@ class DSLSerializer:
                 lines.append(f"# {canvas.name}")
 
             for node in canvas_nodes:
+                # Build node ID with optional index suffix
+                node_id = node.id
+                if self.show_indices and node.meta and node.meta.original_id is not None:
+                    node_id = f"{node.id}[{node.meta.original_id}]"
+
                 if node.kind == NodeKind.COMMENT:
                     text = node.text or ""
-                    lines.append(f'{node.id}: # "{text}"')
+                    lines.append(f'{node_id}: # "{text}"')
                 elif node.kind == NodeKind.ABSTRACTION_INSTANCE and node.ref:
                     args_str = ",".join(str(a) for a in node.args) if node.args else ""
                     if args_str:
-                        lines.append(f"{node.id}: {node.type}({args_str}) @{node.ref.path}")
+                        lines.append(f"{node_id}: {node.type}({args_str}) @{node.ref.path}")
                     else:
-                        lines.append(f"{node.id}: {node.type} @{node.ref.path}")
+                        lines.append(f"{node_id}: {node.type} @{node.ref.path}")
                 elif node.kind == NodeKind.MESSAGE:
                     args = self._format_args(node.args)
-                    lines.append(f"{node.id}: msg {args}")
+                    lines.append(f"{node_id}: msg {args}")
                 else:
                     args = self._format_args(node.args)
                     if args:
-                        line = f"{node.id}: {node.type} {args}"
+                        line = f"{node_id}: {node.type} {args}"
                     else:
-                        line = f"{node.id}: {node.type}"
+                        line = f"{node_id}: {node.type}"
 
                     # Add annotation comment if enabled
                     if self.annotate:
@@ -305,7 +312,11 @@ class DSLSerializer:
                         args_str = ""
                         if node.args:
                             args_str = f"({','.join(str(a) for a in node.args)})"
-                        chain_parts.append(f"{node_id}:{node.type}{args_str}")
+                        # Add index suffix if enabled
+                        id_str = node_id
+                        if self.show_indices and node.meta and node.meta.original_id is not None:
+                            id_str = f"{node_id}[{node.meta.original_id}]"
+                        chain_parts.append(f"{id_str}:{node.type}{args_str}")
 
                         # Collect annotations for this chain
                         if self.annotate and self._registry:
@@ -439,7 +450,7 @@ class DSLSerializer:
 
 
 def ir_to_dsl(ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT,
-               annotate: bool = False) -> str:
+               annotate: bool = False, show_indices: bool = False) -> str:
     """
     Convert an IR patch to DSL string.
 
@@ -447,9 +458,10 @@ def ir_to_dsl(ir_patch: IRPatch, mode: DSLMode = DSLMode.COMPACT,
         ir_patch: The IR patch to convert
         mode: DSL mode (FULL or COMPACT)
         annotate: Include semantic annotations from registry
+        show_indices: Include original .pd file object indices
 
     Returns:
         DSL string representation
     """
-    serializer = DSLSerializer(ir_patch, mode, annotate=annotate)
+    serializer = DSLSerializer(ir_patch, mode, annotate=annotate, show_indices=show_indices)
     return serializer.serialize()
