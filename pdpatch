@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""
+pdpatch - CLI for programmatic Pure Data patch editing
+
+Uses pdpy's internal object tracking to handle indices automatically.
+
+Usage:
+    pdpatch new <name.pd>                      # Create empty patch
+    pdpatch add <patch.pd> <type> [args...]    # Add object, prints ID
+    pdpatch connect <patch.pd> <src> <dst>     # Connect by ID or type
+    pdpatch list <patch.pd>                    # List objects with IDs
+    pdpatch delete <patch.pd> <id>             # Delete object by ID
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+# Add pdpy to path if running from repo
+script_dir = Path(__file__).parent.resolve()
+if (script_dir / 'pdpy_lib').exists():
+    sys.path.insert(0, str(script_dir))
+
+from pdpy_lib.patching.pdpy import PdPy
+from pdpy_lib.objects.obj import Obj
+from pdpy_lib.objects.msg import Msg
+from pdpy_lib.objects.comment import Comment
+from pdpy_lib.connections.edge import Edge
+from pdpy_lib.connections.iolet import Iolet
+from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
+
+
+def load_patch(path: Path) -> PdPy:
+    """Load a .pd file into PdPy."""
+    raw = loadPdFile(str(path))
+    pd_lines = parsePdFileLines(raw)
+    return PdPy(name=path.stem, pd_lines=pd_lines)
+
+
+def save_patch(pdpy: PdPy, path: Path):
+    """Save PdPy to .pd file."""
+    with open(path, 'w') as f:
+        f.write(pdpy.__pd__())
+
+
+def get_canvas(pdpy: PdPy):
+    """Get the root canvas."""
+    return pdpy.root if hasattr(pdpy, 'root') else pdpy
+
+
+def list_objects(pdpy: PdPy) -> list:
+    """List all objects with their IDs."""
+    canvas = get_canvas(pdpy)
+    objects = []
+
+    for i, node in enumerate(getattr(canvas, 'nodes', [])):
+        obj_type = getattr(node, 'className', getattr(node, '__pdpy__', '?'))
+        args = getattr(node, 'args', [])
+        args_str = ' '.join(str(a) for a in args) if args else ''
+        obj_id = getattr(node, 'id', i)
+        objects.append({
+            'id': obj_id,
+            'index': i,
+            'type': obj_type,
+            'args': args_str,
+        })
+
+    return objects
+
+
+def find_object(pdpy: PdPy, identifier: str):
+    """Find object by ID, index, or type+args."""
+    canvas = get_canvas(pdpy)
+    nodes = getattr(canvas, 'nodes', [])
+
+    # Try as numeric ID/index
+    try:
+        idx = int(identifier)
+        # First try as ID
+        for node in nodes:
+            if getattr(node, 'id', None) == idx:
+                return node
+        # Then as index
+        if 0 <= idx < len(nodes):
+            return nodes[idx]
+    except ValueError:
+        pass
+
+    # Try as type (e.g., "osc~" or "osc~ 440")
+    parts = identifier.split()
+    obj_type = parts[0]
+    obj_args = ' '.join(parts[1:]) if len(parts) > 1 else None
+
+    for node in nodes:
+        node_type = getattr(node, 'className', '')
+        if node_type == obj_type:
+            if obj_args is None:
+                return node
+            node_args = ' '.join(str(a) for a in getattr(node, 'args', []))
+            if node_args == obj_args:
+                return node
+
+    return None
+
+
+def cmd_new(args):
+    """Create a new empty patch."""
+    path = Path(args.patch)
+
+    if path.exists() and not args.force:
+        print(f"File exists: {path} (use --force to overwrite)", file=sys.stderr)
+        return 1
+
+    pdpy = PdPy(name=path.stem, root=True)
+    save_patch(pdpy, path)
+    print(f"Created: {path}")
+    return 0
+
+
+def cmd_add(args):
+    """Add an object to a patch."""
+    path = Path(args.patch)
+
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    pdpy = load_patch(path)
+    canvas = get_canvas(pdpy)
+
+    # Create the object
+    obj_type = args.type
+    obj_args = args.args if args.args else []
+
+    # Calculate position - stack objects vertically
+    nodes = getattr(canvas, 'nodes', [])
+    x = 50
+    y = 50 + len(nodes) * 40
+
+    # Handle special types
+    if obj_type == 'msg':
+        obj = Msg(x=x, y=y)
+        if obj_args:
+            obj.addargs(*obj_args)
+    elif obj_type == 'text' or obj_type == 'comment':
+        obj = Comment(' '.join(obj_args), x=x, y=y)
+    else:
+        obj = Obj(className=obj_type, x=x, y=y)
+        if obj_args:
+            obj.addargs(*obj_args)
+
+    # Add to canvas - this assigns the ID
+    canvas.grow()
+    obj.id = canvas.add(obj)
+
+    save_patch(pdpy, path)
+
+    # Print the assigned ID
+    print(f"Added [{obj.id}]: {obj_type} {' '.join(str(a) for a in obj_args)}")
+    return 0
+
+
+def cmd_connect(args):
+    """Connect two objects."""
+    path = Path(args.patch)
+
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    pdpy = load_patch(path)
+    canvas = get_canvas(pdpy)
+
+    # Find source and destination
+    src = find_object(pdpy, args.src)
+    dst = find_object(pdpy, args.dst)
+
+    if src is None:
+        print(f"Source not found: {args.src}", file=sys.stderr)
+        return 1
+    if dst is None:
+        print(f"Destination not found: {args.dst}", file=sys.stderr)
+        return 1
+
+    # Get port numbers
+    src_port = args.outlet if args.outlet is not None else 0
+    dst_port = args.inlet if args.inlet is not None else 0
+
+    # Create edge
+    edge = Edge(pd_lines=[src.id, src_port, dst.id, dst_port])
+    canvas.edge(edge)
+
+    save_patch(pdpy, path)
+
+    src_type = getattr(src, 'className', '?')
+    dst_type = getattr(dst, 'className', '?')
+    print(f"Connected: [{src.id}]{src_type}:{src_port} -> [{dst.id}]{dst_type}:{dst_port}")
+    return 0
+
+
+def cmd_list(args):
+    """List all objects in a patch."""
+    path = Path(args.patch)
+
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    pdpy = load_patch(path)
+    objects = list_objects(pdpy)
+
+    if not objects:
+        print("(empty patch)")
+        return 0
+
+    print(f"Objects in {path.name}:")
+    for obj in objects:
+        args_str = f" {obj['args']}" if obj['args'] else ""
+        print(f"  [{obj['id']}] {obj['type']}{args_str}")
+
+    # Also show connections
+    canvas = get_canvas(pdpy)
+    edges = getattr(canvas, 'edges', [])
+    if edges:
+        print(f"\nConnections:")
+        for edge in edges:
+            src_id = edge.source.id if hasattr(edge.source, 'id') else '?'
+            src_port = edge.source.port if hasattr(edge.source, 'port') else 0
+            dst_id = edge.sink.id if hasattr(edge.sink, 'id') else '?'
+            dst_port = edge.sink.port if hasattr(edge.sink, 'port') else 0
+            print(f"  [{src_id}]:{src_port} -> [{dst_id}]:{dst_port}")
+
+    return 0
+
+
+def cmd_delete(args):
+    """Delete an object from a patch."""
+    path = Path(args.patch)
+
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    pdpy = load_patch(path)
+    canvas = get_canvas(pdpy)
+
+    obj = find_object(pdpy, args.id)
+    if obj is None:
+        print(f"Object not found: {args.id}", file=sys.stderr)
+        return 1
+
+    # Remove from nodes
+    nodes = getattr(canvas, 'nodes', [])
+    obj_id = obj.id
+    obj_type = getattr(obj, 'className', '?')
+
+    if obj in nodes:
+        nodes.remove(obj)
+
+    # Remove connected edges
+    edges = getattr(canvas, 'edges', [])
+    edges_to_remove = []
+    for edge in edges:
+        src_id = edge.source.id if hasattr(edge.source, 'id') else None
+        dst_id = edge.sink.id if hasattr(edge.sink, 'id') else None
+        if src_id == obj_id or dst_id == obj_id:
+            edges_to_remove.append(edge)
+
+    for edge in edges_to_remove:
+        edges.remove(edge)
+
+    save_patch(pdpy, path)
+
+    print(f"Deleted [{obj_id}]: {obj_type}")
+    if edges_to_remove:
+        print(f"  (removed {len(edges_to_remove)} connection(s))")
+
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CLI for programmatic Pure Data patch editing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    pdpatch new synth.pd                    # Create empty patch
+    pdpatch add synth.pd osc~ 440           # Add oscillator
+    pdpatch add synth.pd dac~               # Add audio output
+    pdpatch list synth.pd                   # Show objects with IDs
+    pdpatch connect synth.pd 0 1            # Connect by ID
+    pdpatch connect synth.pd "osc~" "dac~"  # Connect by type
+    pdpatch delete synth.pd 0               # Delete object
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # new
+    p_new = subparsers.add_parser('new', help='Create new patch')
+    p_new.add_argument('patch', help='Output .pd file')
+    p_new.add_argument('-f', '--force', action='store_true', help='Overwrite existing')
+
+    # add
+    p_add = subparsers.add_parser('add', help='Add object to patch')
+    p_add.add_argument('patch', help='Patch file')
+    p_add.add_argument('type', help='Object type (osc~, dac~, +, etc.)')
+    p_add.add_argument('args', nargs='*', help='Object arguments')
+
+    # connect
+    p_connect = subparsers.add_parser('connect', help='Connect two objects')
+    p_connect.add_argument('patch', help='Patch file')
+    p_connect.add_argument('src', help='Source object (ID, index, or "type args")')
+    p_connect.add_argument('dst', help='Destination object')
+    p_connect.add_argument('-o', '--outlet', type=int, help='Source outlet (default: 0)')
+    p_connect.add_argument('-i', '--inlet', type=int, help='Destination inlet (default: 0)')
+
+    # list
+    p_list = subparsers.add_parser('list', help='List objects in patch')
+    p_list.add_argument('patch', help='Patch file')
+
+    # delete
+    p_delete = subparsers.add_parser('delete', help='Delete object from patch')
+    p_delete.add_argument('patch', help='Patch file')
+    p_delete.add_argument('id', help='Object ID or type')
+
+    args = parser.parse_args()
+
+    commands = {
+        'new': cmd_new,
+        'add': cmd_add,
+        'connect': cmd_connect,
+        'list': cmd_list,
+        'delete': cmd_delete,
+    }
+
+    return commands[args.command](args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

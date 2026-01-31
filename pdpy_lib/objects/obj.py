@@ -50,7 +50,12 @@ class Obj(Object):
         # Handle empty object boxes (no class name)
         if self.className == '':
           pass  # Leave className as empty string
-        elif super().__isnum__(self.className):
+        # Check if className is actually numeric (int or float), not just any string
+        # The base __isnum__ method is broken - it returns True for any string
+        elif isinstance(self.className, (int, float)) or (
+            isinstance(self.className, str) and
+            self.className.lstrip('-').replace('.', '', 1).isdigit()
+        ):
           if 4 < len(pd_lines):
             self.className = 'list'
             self.addargs(pd_lines[3:])

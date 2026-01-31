@@ -474,10 +474,52 @@ echo '*.pd diff=pd' >> .gitattributes
 
 Then `git diff` will show semantic diffs for .pd files.
 
+## Programmatic Patch Editing (pdpatch)
+
+The `pdpatch` CLI provides programmatic patch editing without manual index counting.
+
+### Create and build a patch
+```bash
+/Users/borismo/pdpy/pdpatch new synth.pd              # Create empty patch
+/Users/borismo/pdpy/pdpatch add synth.pd osc~ 440     # Add oscillator (prints ID)
+/Users/borismo/pdpy/pdpatch add synth.pd "*~" 0.5     # Add multiplier
+/Users/borismo/pdpy/pdpatch add synth.pd dac~         # Add audio output
+/Users/borismo/pdpy/pdpatch connect synth.pd 0 1      # Connect by ID
+/Users/borismo/pdpy/pdpatch connect synth.pd 1 2      # Connect multiplier to dac~
+```
+
+### List objects and connections
+```bash
+/Users/borismo/pdpy/pdpatch list synth.pd
+# Objects in synth.pd:
+#   [0] osc~ 440
+#   [1] *~ 0.5
+#   [2] dac~
+# Connections:
+#   [0]:0 -> [1]:0
+#   [1]:0 -> [2]:0
+```
+
+### Connect by type name
+```bash
+/Users/borismo/pdpy/pdpatch connect synth.pd "osc~" "dac~"    # By type
+/Users/borismo/pdpy/pdpatch connect synth.pd "osc~ 440" 1     # By type+args
+/Users/borismo/pdpy/pdpatch connect synth.pd 0 1 -o 1 -i 0    # Specify ports
+```
+
+### Delete objects
+```bash
+/Users/borismo/pdpy/pdpatch delete synth.pd 1    # By ID
+/Users/borismo/pdpy/pdpatch delete synth.pd "dac~"  # By type
+```
+
+**Note:** pdpatch handles object index counting automatically - no need to manually track indices.
+
 ## Resources
 
 - pd2ir tool: `/Users/borismo/pdpy/pd2ir`
 - pddiff tool: `/Users/borismo/pdpy/pddiff`
+- pdpatch tool: `/Users/borismo/pdpy/pdpatch`
 - Object registry: `/Users/borismo/pdpy/data/objects.vanilla.json`
 - IR module: `/Users/borismo/pdpy/pdpy_lib/ir/`
 - Docgen module: `/Users/borismo/pdpy/pdpy_lib/ir/docgen.py`
