@@ -159,7 +159,11 @@ class IRBuilder:
         return pdpy_obj.__class__.__name__.lower()
 
     def _get_object_args(self, pdpy_obj: Any) -> List[str]:
-        """Get arguments from a pdpy object."""
+        """Get arguments from a pdpy object.
+
+        pdpy stores args with spaces joined into single strings (e.g., ['b b'] instead of ['b', 'b']).
+        This method splits them back into individual arguments for proper IO counting.
+        """
         if hasattr(pdpy_obj, 'args') and pdpy_obj.args:
             class_name = getattr(pdpy_obj, 'className', '')
 
@@ -176,7 +180,15 @@ class IRBuilder:
                     return [str(a) for a in pdpy_obj.args[1:]]
                 return []
 
-            return [str(a) for a in pdpy_obj.args]
+            # Split space-joined args back into individual arguments
+            # pdpy stores ['b b'] but we need ['b', 'b'] for proper IO counting
+            result = []
+            for arg in pdpy_obj.args:
+                arg_str = str(arg)
+                # Split by spaces, but preserve the arg if it doesn't contain spaces
+                parts = arg_str.split()
+                result.extend(parts)
+            return result
         return []
 
     def _get_layout(self, pdpy_obj: Any) -> Optional[IRLayout]:
