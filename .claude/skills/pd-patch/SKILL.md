@@ -576,11 +576,44 @@ The `[t b b]` sends a bang to `[del]` AND sends "stop" to cancel any pending del
 3. **Kill feedback first:** Set multipliers to 0 before clearing buffers
 4. **Check retrigger logic:** `[del]` without `stop` causes double-triggers
 
+## Project Documentation (pd-docs)
+
+The `pd-docs` tool maintains living documentation for Pd projects with smart code-to-doc linking.
+
+### Initialize documentation
+```bash
+/Users/borismo/pdpy/pd-docs init <project-dir>
+```
+Generates `docs/` folder with markdown files and `.pd-docs/refs.json` for tracking.
+
+### Check for stale documentation
+```bash
+/Users/borismo/pdpy/pd-docs report <project-dir>
+```
+**Use this after editing .pd files.** Outputs LLM-friendly report:
+- **STALE**: nodes with changed args/connections
+- **NEW**: nodes added without doc entries
+- **DELETED**: nodes removed (orphan doc refs)
+
+### Update workflow (for Claude)
+
+After editing a .pd file:
+1. Run `pd-docs report` to see what changed
+2. Update the relevant doc sections in `docs/*.md`
+3. Run `pd-docs update <changed-file.pd>` to sync refs
+
+### Other commands
+```bash
+/Users/borismo/pdpy/pd-docs check <project>   # Quick stale check (less detail)
+/Users/borismo/pdpy/pd-docs graph <project>   # Show dependency tree
+```
+
 ## Resources
 
 - pd2ir tool: `/Users/borismo/pdpy/pd2ir`
 - pddiff tool: `/Users/borismo/pdpy/pddiff`
 - pdpatch tool: `/Users/borismo/pdpy/pdpatch`
+- pd-docs tool: `/Users/borismo/pdpy/pd-docs`
 - Object registry: `/Users/borismo/pdpy/data/objects.vanilla.json`
 - IR module: `/Users/borismo/pdpy/pdpy_lib/ir/`
 - Docgen module: `/Users/borismo/pdpy/pdpy_lib/ir/docgen.py`
