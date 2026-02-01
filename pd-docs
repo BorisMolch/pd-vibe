@@ -542,6 +542,158 @@ def cmd_check(args):
     return 1
 
 
+def cmd_report(args):
+    """Generate LLM-friendly report of what needs updating."""
+    project_dir = Path(args.project_dir or '.').resolve()
+
+    refs_file = project_dir / '.pd-docs' / 'refs.json'
+    docs_dir = project_dir / 'docs'
+
+    if not refs_file.exists():
+        print("ERROR: No refs.json found. Run 'pd-docs init' first.")
+        return 1
+
+    refs = load_refs(refs_file)
+
+    # Analyze all patches
+    pd_files = find_pd_files(project_dir)
+    patches = {}
+    for pd_file in pd_files:
+        info = analyze_patch(pd_file)
+        if info:
+            patches[info.name] = info
+
+    # Track issues
+    stale = []      # Content changed
+    deleted = []    # Node removed
+    new_nodes = []  # Node added, no doc
+
+    # Group refs by patch
+    by_patch = {}
+    for ref_key, ref in refs.items():
+        patch_name = ref_key.split('::')[0]
+        if patch_name not in by_patch:
+            by_patch[patch_name] = {}
+        pos_key = f"{ref.canvas}@{ref.x},{ref.y}"
+        by_patch[patch_name][pos_key] = ref
+
+    # Check each patch
+    for patch_name, info in patches.items():
+        patch_refs = by_patch.get(patch_name, {})
+
+        # Build current nodes by position
+        current_by_pos = {}
+        for n in info.nodes:
+            pos_key = f"{n.get('canvas', 'c0')}@{n.get('x', 0)},{n.get('y', 0)}"
+            current_by_pos[pos_key] = n
+
+        # Check for stale/deleted
+        for pos_key, ref in patch_refs.items():
+            if pos_key not in current_by_pos:
+                deleted.append({
+                    'patch': patch_name,
+                    'type': ref.obj_type,
+                    'args': ref.args,
+                    'pos': pos_key,
+                    'doc_file': ref.doc_file
+                })
+            else:
+                current = current_by_pos[pos_key]
+                if current['hash'] != ref.hash:
+                    stale.append({
+                        'patch': patch_name,
+                        'type': ref.obj_type,
+                        'old_args': ref.args,
+                        'new_args': current['args'],
+                        'pos': pos_key,
+                        'doc_file': ref.doc_file
+                    })
+
+        # Check for new nodes (not in refs)
+        for pos_key, node in current_by_pos.items():
+            if pos_key not in patch_refs:
+                new_nodes.append({
+                    'patch': patch_name,
+                    'type': node['type'],
+                    'args': node['args'],
+                    'pos': pos_key,
+                    'doc_file': f"{patch_name}.md"
+                })
+
+    # Check for patches with deleted files
+    for patch_name in by_patch:
+        if patch_name not in patches:
+            for pos_key, ref in by_patch[patch_name].items():
+                deleted.append({
+                    'patch': patch_name,
+                    'type': ref.obj_type,
+                    'args': ref.args,
+                    'pos': pos_key,
+                    'doc_file': ref.doc_file,
+                    'reason': 'patch file deleted'
+                })
+
+    # Output report
+    if not stale and not deleted and not new_nodes:
+        print("STATUS: UP_TO_DATE")
+        print("All documentation is current.")
+        return 0
+
+    print("STATUS: NEEDS_UPDATE")
+    print()
+
+    if stale:
+        print(f"## STALE ({len(stale)} nodes changed)")
+        print()
+        for item in stale:
+            old_args = ' '.join(str(a) for a in item['old_args']) if item['old_args'] else '(none)'
+            new_args = ' '.join(str(a) for a in item['new_args']) if item['new_args'] else '(none)'
+            print(f"- **{item['patch']}**: `{item['type']}`")
+            print(f"  - Position: {item['pos']}")
+            print(f"  - Changed: `{old_args}` → `{new_args}`")
+            print(f"  - Doc: {item['doc_file']}")
+
+            # Try to read current doc text for this node
+            doc_path = docs_dir / item['doc_file']
+            if doc_path.exists():
+                doc_text = doc_path.read_text()
+                # Find the line referencing this node type
+                for line in doc_text.split('\n'):
+                    if f"`{item['type']}" in line:
+                        print(f"  - Current doc: {line.strip()}")
+                        break
+            print()
+
+    if new_nodes:
+        print(f"## NEW ({len(new_nodes)} nodes added)")
+        print()
+        for item in new_nodes:
+            args_str = ' '.join(str(a) for a in item['args']) if item['args'] else ''
+            print(f"- **{item['patch']}**: `{item['type']} {args_str}`")
+            print(f"  - Position: {item['pos']}")
+            print(f"  - Doc: {item['doc_file']} (needs entry)")
+            print()
+
+    if deleted:
+        print(f"## DELETED ({len(deleted)} nodes removed)")
+        print()
+        for item in deleted:
+            args_str = ' '.join(str(a) for a in item['args']) if item['args'] else ''
+            reason = item.get('reason', 'node deleted from patch')
+            print(f"- **{item['patch']}**: `{item['type']} {args_str}`")
+            print(f"  - Position: {item['pos']}")
+            print(f"  - Reason: {reason}")
+            print(f"  - Doc: {item['doc_file']} (remove reference)")
+            print()
+
+    print("---")
+    print("ACTION: Update the doc files listed above, then run:")
+    print(f"  pd-docs update <changed-file.pd>")
+    print("to refresh the reference hashes.")
+
+    return 1
+
+
 def cmd_graph(args):
     """Show dependency graph."""
     project_dir = Path(args.project_dir or '.').resolve()
@@ -669,7 +821,8 @@ def main():
 Examples:
     pd-docs init myproject/        # Generate initial docs
     pd-docs check                  # Find stale references
-    pd-docs update synth.pd        # Update after editing
+    pd-docs report                 # LLM-friendly report of what needs updating
+    pd-docs update synth.pd        # Update refs after editing
     pd-docs graph                  # Show dependency tree
         """
     )
@@ -684,6 +837,10 @@ Examples:
     p_check = subparsers.add_parser('check', help='Check for stale refs')
     p_check.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
 
+    # report
+    p_report = subparsers.add_parser('report', help='LLM-friendly report of changes')
+    p_report.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
+
     # graph
     p_graph = subparsers.add_parser('graph', help='Show dependency graph')
     p_graph.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
@@ -697,6 +854,7 @@ Examples:
     commands = {
         'init': cmd_init,
         'check': cmd_check,
+        'report': cmd_report,
         'graph': cmd_graph,
         'update': cmd_update,
     }
