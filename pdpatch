@@ -1,235 +1,420 @@
 #!/usr/bin/env python3
 """
-pdpatch - CLI for programmatic Pure Data patch editing
+pdpatch - Safe CLI for Pure Data patch editing
 
-Uses pdpy's internal object tracking to handle indices automatically.
+Text-based editing that preserves file structure exactly.
+Does NOT use pdpy's serialization (which reorders comments).
 
 Usage:
-    pdpatch new <name.pd>                      # Create empty patch
-    pdpatch add <patch.pd> <type> [args...]    # Add object, prints ID
-    pdpatch connect <patch.pd> <src> <dst>     # Connect by ID or type
-    pdpatch list <patch.pd>                    # List objects with IDs
-    pdpatch delete <patch.pd> <id>             # Delete object by ID
-
-Subpatch support:
-    pdpatch list <patch.pd> -s envelope        # List objects in subpatch
-    pdpatch add <patch.pd> osc~ 440 -s synth   # Add to subpatch
-    pdpatch list <patch.pd> -s synth/filter    # Nested subpatch path
+    pdpatch list <patch.pd>                    # List objects with indices
+    pdpatch add <patch.pd> <type> [args...]    # Add object at end
+    pdpatch connect <patch.pd> <src> <dst>     # Add connection
+    pdpatch delete <patch.pd> <index>          # Delete by index
 """
 
 import sys
+import re
 import argparse
 from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
-# Add pdpy to path if running from repo
-script_dir = Path(__file__).parent.resolve()
-if (script_dir / 'pdpy_lib').exists():
-    sys.path.insert(0, str(script_dir))
-
-from pdpy_lib.patching.pdpy import PdPy
-from pdpy_lib.patching.canvas import Canvas
-from pdpy_lib.objects.obj import Obj
-from pdpy_lib.objects.msg import Msg
-from pdpy_lib.objects.comment import Comment
-from pdpy_lib.connections.edge import Edge
-from pdpy_lib.connections.iolet import Iolet
-from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
-
-# Try to import the registry for connection validation
+# Try to import registry for IO validation
 try:
+    script_dir = Path(__file__).parent.resolve()
+    if (script_dir / 'pdpy_lib').exists():
+        sys.path.insert(0, str(script_dir))
     from pdpy_lib.ir.registry import get_registry
     REGISTRY = get_registry()
-except ImportError:
+except:
     REGISTRY = None
 
 
-def load_patch(path: Path) -> PdPy:
-    """Load a .pd file into PdPy."""
-    raw = loadPdFile(str(path))
-    pd_lines = parsePdFileLines(raw)
-    return PdPy(name=path.stem, pd_lines=pd_lines)
+@dataclass
+class PdObject:
+    """Represents a parsed Pd object."""
+    index: int          # Object index (for connections)
+    line_num: int       # Line number in file (1-based)
+    obj_type: str       # Object type (osc~, dac~, etc.)
+    args: List[str]     # Arguments
+    x: int              # X position
+    y: int              # Y position
+    raw_line: str       # Original line text
+    canvas_depth: int   # 0 = root, 1 = first subpatch, etc.
 
 
-def save_patch(pdpy: PdPy, path: Path):
-    """Save PdPy to .pd file."""
-    with open(path, 'w') as f:
-        f.write(pdpy.__pd__())
+@dataclass
+class PdCanvas:
+    """Represents a canvas/subpatch."""
+    name: str
+    start_line: int
+    end_line: int
+    depth: int
+    objects: List[PdObject]
 
 
-def find_canvas(pdpy: PdPy, subpatch_path: str = None):
-    """Find a canvas by subpatch path (e.g., 'envelope' or 'synth/filter').
+def parse_pd_file(path: Path) -> Tuple[List[str], List[PdObject], List[PdCanvas]]:
+    """Parse a .pd file, extracting objects and structure.
 
-    Returns (canvas, error_message). If error_message is not None, canvas is None.
+    Returns (lines, objects, canvases).
     """
-    canvas = pdpy.root if hasattr(pdpy, 'root') else pdpy
+    with open(path, 'r') as f:
+        lines = f.readlines()
 
-    if not subpatch_path:
-        return canvas, None
+    objects = []
+    canvases = []
+    canvas_stack = []  # Stack of (name, start_line, depth)
 
-    # Split path into components (e.g., "synth/filter" -> ["synth", "filter"])
-    parts = subpatch_path.split('/')
+    # Object index counter - resets for each canvas scope
+    # But for connections, Pd uses global sequential index within each canvas
+    current_depth = 0
+    index_at_depth = {0: 0}  # depth -> next index
 
-    for part in parts:
-        # Look for a Canvas node with matching name
-        found = None
-        for node in getattr(canvas, 'nodes', []):
-            if isinstance(node, Canvas) or hasattr(node, 'nodes'):
-                node_name = getattr(node, 'name', None)
-                if node_name == part:
-                    found = node
-                    break
+    for line_num, line in enumerate(lines, 1):
+        line_stripped = line.strip()
 
-        if found is None:
-            # List available subpatches for better error message
-            available = []
-            for node in getattr(canvas, 'nodes', []):
-                if isinstance(node, Canvas) or hasattr(node, 'nodes'):
-                    name = getattr(node, 'name', None)
-                    if name:
-                        available.append(name)
+        # Track canvas/subpatch boundaries
+        if line_stripped.startswith('#N canvas'):
+            if canvas_stack:
+                # Entering a subpatch
+                current_depth += 1
+                index_at_depth[current_depth] = 0
+            # Extract canvas name if present
+            parts = line_stripped.split()
+            name = parts[6] if len(parts) > 6 else 'root'
+            canvas_stack.append((name, line_num, current_depth))
 
-            if available:
-                return None, f"Subpatch '{part}' not found. Available: {', '.join(available)}"
-            else:
-                return None, f"Subpatch '{part}' not found. No subpatches in current canvas."
+        elif line_stripped.startswith('#X restore'):
+            # Exiting a subpatch
+            if canvas_stack:
+                name, start_line, depth = canvas_stack.pop()
+                canvases.append(PdCanvas(
+                    name=name,
+                    start_line=start_line,
+                    end_line=line_num,
+                    depth=depth,
+                    objects=[o for o in objects if o.canvas_depth == depth]
+                ))
+            if current_depth > 0:
+                current_depth -= 1
 
-        canvas = found
+        # Parse objects (things that get indices)
+        # These are: obj, msg, floatatom, symbolatom, text, array, listbox
+        if line_stripped.startswith('#X obj '):
+            match = re.match(r'#X obj (\d+) (\d+) ([^;]+);?', line_stripped)
+            if match:
+                x, y = int(match.group(1)), int(match.group(2))
+                rest = match.group(3).split()
+                obj_type = rest[0] if rest else ''
+                args = rest[1:] if len(rest) > 1 else []
 
-    return canvas, None
+                idx = index_at_depth.get(current_depth, 0)
+                objects.append(PdObject(
+                    index=idx,
+                    line_num=line_num,
+                    obj_type=obj_type,
+                    args=args,
+                    x=x, y=y,
+                    raw_line=line,
+                    canvas_depth=current_depth
+                ))
+                index_at_depth[current_depth] = idx + 1
+
+        elif line_stripped.startswith('#X msg '):
+            match = re.match(r'#X msg (\d+) (\d+) ([^;]*);?', line_stripped)
+            if match:
+                x, y = int(match.group(1)), int(match.group(2))
+                content = match.group(3)
+
+                idx = index_at_depth.get(current_depth, 0)
+                objects.append(PdObject(
+                    index=idx,
+                    line_num=line_num,
+                    obj_type='msg',
+                    args=[content] if content else [],
+                    x=x, y=y,
+                    raw_line=line,
+                    canvas_depth=current_depth
+                ))
+                index_at_depth[current_depth] = idx + 1
+
+        elif line_stripped.startswith('#X text '):
+            match = re.match(r'#X text (\d+) (\d+) ([^;]*);?', line_stripped)
+            if match:
+                x, y = int(match.group(1)), int(match.group(2))
+                content = match.group(3)
+
+                idx = index_at_depth.get(current_depth, 0)
+                objects.append(PdObject(
+                    index=idx,
+                    line_num=line_num,
+                    obj_type='text',
+                    args=[content] if content else [],
+                    x=x, y=y,
+                    raw_line=line,
+                    canvas_depth=current_depth
+                ))
+                index_at_depth[current_depth] = idx + 1
+
+        elif line_stripped.startswith('#X floatatom ') or line_stripped.startswith('#X symbolatom '):
+            # These also count as objects
+            parts = line_stripped.split()
+            if len(parts) >= 4:
+                x, y = int(parts[2]), int(parts[3])
+                obj_type = parts[1]
+
+                idx = index_at_depth.get(current_depth, 0)
+                objects.append(PdObject(
+                    index=idx,
+                    line_num=line_num,
+                    obj_type=obj_type,
+                    args=parts[4:],
+                    x=x, y=y,
+                    raw_line=line,
+                    canvas_depth=current_depth
+                ))
+                index_at_depth[current_depth] = idx + 1
+
+    return lines, objects, canvases
 
 
-def get_canvas(pdpy: PdPy, subpatch: str = None):
-    """Get the target canvas (root or subpatch)."""
-    canvas, error = find_canvas(pdpy, subpatch)
-    if error:
-        print(f"Error: {error}", file=sys.stderr)
-        return None
-    return canvas
+def find_insertion_point(lines: List[str], depth: int = 0) -> int:
+    """Find the line number where new objects should be inserted.
 
-
-def get_next_position(canvas) -> tuple:
-    """Calculate a reasonable position for a new object.
-
-    Finds the lowest object in the canvas and places the new one below it.
-    Uses a grid-based layout with reasonable spacing.
+    For root canvas (depth=0): before the first #X connect or end of file.
     """
-    nodes = getattr(canvas, 'nodes', [])
+    # Find the last object/msg/text line at this depth, insert after it
+    # Or find the first #X connect and insert before it
 
-    if not nodes:
+    current_depth = 0
+    last_object_line = 0
+    first_connect_line = None
+
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+
+        if line_stripped.startswith('#N canvas'):
+            if current_depth > 0 or last_object_line > 0:
+                current_depth += 1
+        elif line_stripped.startswith('#X restore'):
+            if current_depth > 0:
+                current_depth -= 1
+
+        if current_depth == depth:
+            if (line_stripped.startswith('#X obj ') or
+                line_stripped.startswith('#X msg ') or
+                line_stripped.startswith('#X text ') or
+                line_stripped.startswith('#X floatatom ') or
+                line_stripped.startswith('#X symbolatom ')):
+                last_object_line = i
+            elif line_stripped.startswith('#X connect ') and first_connect_line is None:
+                first_connect_line = i
+
+    if first_connect_line is not None:
+        return first_connect_line
+    return last_object_line + 1
+
+
+def get_next_position(objects: List[PdObject], depth: int = 0) -> Tuple[int, int]:
+    """Calculate position for new object."""
+    depth_objects = [o for o in objects if o.canvas_depth == depth]
+
+    if not depth_objects:
         return (50, 50)
 
-    # Find the maximum y position among existing objects
-    max_y = 50
-    for node in nodes:
-        if hasattr(node, 'position') and node.position:
-            y = getattr(node.position, 'y', 0) or 0
-            if y > max_y:
-                max_y = y
-
-    # Place new object 40 pixels below the lowest one
-    # But cap at reasonable values to avoid runaway positions
-    new_y = min(max_y + 40, 500)
-
-    return (50, new_y)
+    # Find max y and place below
+    max_y = max(o.y for o in depth_objects)
+    return (50, min(max_y + 40, 800))
 
 
-def get_object_io_count(obj) -> tuple:
-    """Get inlet and outlet count for an object using the registry.
-
-    Returns (inlet_count, outlet_count). Returns (1, 1) as default.
-    """
+def get_io_count(obj_type: str, args: List[str]) -> Tuple[int, int]:
+    """Get inlet and outlet count for an object type."""
     if REGISTRY is None:
         return (1, 1)
-
-    obj_type = getattr(obj, 'className', None)
-    if not obj_type:
-        return (1, 1)
-
-    # Get args - handle pdpy's space-joined format
-    args = []
-    if hasattr(obj, 'args') and obj.args:
-        for arg in obj.args:
-            args.extend(str(arg).split())
-
     try:
         return REGISTRY.get_io_count(obj_type, args)
     except:
         return (1, 1)
 
 
-def list_objects(canvas) -> list:
-    """List all objects with their IDs."""
-    objects = []
+def cmd_list(args):
+    """List all objects in a patch."""
+    path = Path(args.patch)
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
 
-    for i, node in enumerate(getattr(canvas, 'nodes', [])):
-        # Check if it's a subpatch (Canvas)
-        is_subpatch = isinstance(node, Canvas) or hasattr(node, 'nodes')
+    lines, objects, canvases = parse_pd_file(path)
 
-        if is_subpatch:
-            obj_type = f"pd {getattr(node, 'name', '?')}"
-            args_str = ''
-            child_count = len(getattr(node, 'nodes', []))
+    # Filter by depth (root = 0)
+    target_depth = 0
+    if args.subpatch:
+        # Find the subpatch
+        for canvas in canvases:
+            if canvas.name == args.subpatch:
+                target_depth = canvas.depth + 1
+                break
         else:
-            obj_type = getattr(node, 'className', getattr(node, '__pdpy__', '?'))
-            args = getattr(node, 'args', [])
-            args_str = ' '.join(str(a) for a in args) if args else ''
-            child_count = 0
+            print(f"Subpatch '{args.subpatch}' not found", file=sys.stderr)
+            available = [c.name for c in canvases if c.name != 'root']
+            if available:
+                print(f"Available: {', '.join(available)}", file=sys.stderr)
+            return 1
 
-        obj_id = getattr(node, 'id', i)
+    depth_objects = [o for o in objects if o.canvas_depth == target_depth]
 
-        # Get IO counts for validation info
-        inlet_count, outlet_count = get_object_io_count(node)
+    if not depth_objects:
+        print("(empty)")
+        return 0
 
-        objects.append({
-            'id': obj_id,
-            'index': i,
-            'type': obj_type,
-            'args': args_str,
-            'is_subpatch': is_subpatch,
-            'child_count': child_count,
-            'inlets': inlet_count,
-            'outlets': outlet_count,
-        })
+    subpatch_info = f" [{args.subpatch}]" if args.subpatch else ""
+    print(f"Objects in {path.name}{subpatch_info}:")
 
-    return objects
+    for obj in depth_objects:
+        args_str = ' '.join(obj.args) if obj.args else ''
+        if obj.obj_type == 'text':
+            # Show comment content
+            print(f"  [{obj.index}] (comment) {args_str[:40]}...")
+        else:
+            if args.verbose:
+                inlets, outlets = get_io_count(obj.obj_type, obj.args)
+                io_info = f"  # {inlets}in/{outlets}out"
+            else:
+                io_info = ""
+            print(f"  [{obj.index}] {obj.obj_type} {args_str}{io_info}")
+
+    # Show connections at this depth
+    print(f"\nConnections:")
+    current_depth = 0
+    for line in lines:
+        line_stripped = line.strip()
+        if line_stripped.startswith('#N canvas') and current_depth >= 0:
+            current_depth += 1
+        elif line_stripped.startswith('#X restore'):
+            current_depth -= 1
+        elif line_stripped.startswith('#X connect ') and current_depth == target_depth + 1:
+            match = re.match(r'#X connect (\d+) (\d+) (\d+) (\d+);?', line_stripped)
+            if match:
+                src, src_port, dst, dst_port = match.groups()
+                print(f"  [{src}]:{src_port} -> [{dst}]:{dst_port}")
+
+    return 0
 
 
-def find_object(canvas, identifier: str):
-    """Find object by ID, index, or type+args."""
-    nodes = getattr(canvas, 'nodes', [])
+def cmd_add(args):
+    """Add an object to a patch."""
+    path = Path(args.patch)
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
 
-    # Try as numeric ID/index
+    lines, objects, canvases = parse_pd_file(path)
+
+    # For now, only support root canvas
+    depth = 0
+    if args.subpatch:
+        print("Subpatch add not yet supported in safe mode", file=sys.stderr)
+        return 1
+
+    # Calculate next index
+    depth_objects = [o for o in objects if o.canvas_depth == depth]
+    next_index = max((o.index for o in depth_objects), default=-1) + 1
+
+    # Calculate position
+    x, y = get_next_position(objects, depth)
+
+    # Build the object line
+    obj_type = args.type
+    obj_args = ' '.join(args.args) if args.args else ''
+    if obj_args:
+        new_line = f"#X obj {x} {y} {obj_type} {obj_args};\n"
+    else:
+        new_line = f"#X obj {x} {y} {obj_type};\n"
+
+    # Find insertion point (before first #X connect)
+    insert_at = find_insertion_point(lines, depth)
+
+    # Insert the line
+    lines.insert(insert_at, new_line)
+
+    # Write back
+    with open(path, 'w') as f:
+        f.writelines(lines)
+
+    print(f"Added [{next_index}]: {obj_type} {obj_args} at ({x}, {y})")
+    return 0
+
+
+def cmd_connect(args):
+    """Add a connection between two objects."""
+    path = Path(args.patch)
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    lines, objects, canvases = parse_pd_file(path)
+
+    # Parse source and destination
     try:
-        idx = int(identifier)
-        # First try as ID
-        for node in nodes:
-            if getattr(node, 'id', None) == idx:
-                return node
-        # Then as index
-        if 0 <= idx < len(nodes):
-            return nodes[idx]
+        src_idx = int(args.src)
+        dst_idx = int(args.dst)
     except ValueError:
-        pass
+        print("Error: source and destination must be object indices (numbers)", file=sys.stderr)
+        print("Use 'pdpatch list' to see object indices", file=sys.stderr)
+        return 1
 
-    # Try as type (e.g., "osc~" or "osc~ 440")
-    parts = identifier.split()
-    obj_type = parts[0]
-    obj_args = ' '.join(parts[1:]) if len(parts) > 1 else None
+    # Find the objects
+    src_obj = next((o for o in objects if o.index == src_idx and o.canvas_depth == 0), None)
+    dst_obj = next((o for o in objects if o.index == dst_idx and o.canvas_depth == 0), None)
 
-    for node in nodes:
-        node_type = getattr(node, 'className', '')
-        # Also check subpatch names
-        if not node_type and hasattr(node, 'name'):
-            node_type = f"pd {node.name}"
+    if src_obj is None:
+        print(f"Source object [{src_idx}] not found", file=sys.stderr)
+        return 1
+    if dst_obj is None:
+        print(f"Destination object [{dst_idx}] not found", file=sys.stderr)
+        return 1
 
-        if node_type == obj_type:
-            if obj_args is None:
-                return node
-            node_args = ' '.join(str(a) for a in getattr(node, 'args', []))
-            if node_args == obj_args:
-                return node
+    src_port = args.outlet if args.outlet is not None else 0
+    dst_port = args.inlet if args.inlet is not None else 0
 
-    return None
+    # Validate connection
+    _, src_outlets = get_io_count(src_obj.obj_type, src_obj.args)
+    dst_inlets, _ = get_io_count(dst_obj.obj_type, dst_obj.args)
+
+    if src_port >= src_outlets:
+        print(f"Error: {src_obj.obj_type} only has {src_outlets} outlet(s)", file=sys.stderr)
+        return 1
+    if dst_port >= dst_inlets:
+        print(f"Error: {dst_obj.obj_type} only has {dst_inlets} inlet(s)", file=sys.stderr)
+        return 1
+
+    # Build connection line
+    new_line = f"#X connect {src_idx} {src_port} {dst_idx} {dst_port};\n"
+
+    # Append to end of file (connections go at the end)
+    # But before any trailing newlines
+    while lines and lines[-1].strip() == '':
+        lines.pop()
+    lines.append(new_line)
+
+    # Write back
+    with open(path, 'w') as f:
+        f.writelines(lines)
+
+    print(f"Connected: [{src_idx}]{src_obj.obj_type}:{src_port} -> [{dst_idx}]{dst_obj.obj_type}:{dst_port}")
+    return 0
+
+
+def cmd_delete(args):
+    """Delete an object from a patch."""
+    path = Path(args.patch)
+    if not path.exists():
+        print(f"File not found: {path}", file=sys.stderr)
+        return 1
+
+    print("Delete not yet implemented in safe mode", file=sys.stderr)
+    print("Edit the .pd file directly to delete objects", file=sys.stderr)
+    return 1
 
 
 def cmd_new(args):
@@ -240,226 +425,35 @@ def cmd_new(args):
         print(f"File exists: {path} (use --force to overwrite)", file=sys.stderr)
         return 1
 
-    pdpy = PdPy(name=path.stem, root=True)
-    save_patch(pdpy, path)
+    content = "#N canvas 0 22 450 300 12;\n"
+    with open(path, 'w') as f:
+        f.write(content)
+
     print(f"Created: {path}")
-    return 0
-
-
-def cmd_add(args):
-    """Add an object to a patch."""
-    path = Path(args.patch)
-
-    if not path.exists():
-        print(f"File not found: {path}", file=sys.stderr)
-        return 1
-
-    pdpy = load_patch(path)
-    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
-    if canvas is None:
-        return 1
-
-    # Create the object
-    obj_type = args.type
-    obj_args = args.args if args.args else []
-
-    # Calculate position - find a reasonable spot
-    x, y = get_next_position(canvas)
-
-    # Handle special types
-    if obj_type == 'msg':
-        obj = Msg(x=x, y=y)
-        if obj_args:
-            obj.addargs(*obj_args)
-    elif obj_type == 'text' or obj_type == 'comment':
-        obj = Comment(' '.join(obj_args), x=x, y=y)
-    else:
-        obj = Obj(className=obj_type, x=x, y=y)
-        if obj_args:
-            obj.addargs(*obj_args)
-
-    # Add to canvas - this assigns the ID
-    canvas.grow()
-    obj.id = canvas.add(obj)
-
-    save_patch(pdpy, path)
-
-    # Print the assigned ID
-    subpatch_info = f" (in {args.subpatch})" if getattr(args, 'subpatch', None) else ""
-    print(f"Added [{obj.id}]: {obj_type} {' '.join(str(a) for a in obj_args)}{subpatch_info}")
-    return 0
-
-
-def cmd_connect(args):
-    """Connect two objects."""
-    path = Path(args.patch)
-
-    if not path.exists():
-        print(f"File not found: {path}", file=sys.stderr)
-        return 1
-
-    pdpy = load_patch(path)
-    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
-    if canvas is None:
-        return 1
-
-    # Find source and destination
-    src = find_object(canvas, args.src)
-    dst = find_object(canvas, args.dst)
-
-    if src is None:
-        print(f"Source not found: {args.src}", file=sys.stderr)
-        return 1
-    if dst is None:
-        print(f"Destination not found: {args.dst}", file=sys.stderr)
-        return 1
-
-    # Get port numbers
-    src_port = args.outlet if args.outlet is not None else 0
-    dst_port = args.inlet if args.inlet is not None else 0
-
-    # Validate connection using registry
-    src_type = getattr(src, 'className', getattr(src, 'name', '?'))
-    dst_type = getattr(dst, 'className', getattr(dst, 'name', '?'))
-
-    _, src_outlet_count = get_object_io_count(src)
-    dst_inlet_count, _ = get_object_io_count(dst)
-
-    # Check outlet validity
-    if src_port >= src_outlet_count:
-        print(f"Error: {src_type} only has {src_outlet_count} outlet(s), cannot use outlet {src_port}", file=sys.stderr)
-        return 1
-
-    # Check inlet validity
-    if dst_port >= dst_inlet_count:
-        print(f"Error: {dst_type} only has {dst_inlet_count} inlet(s), cannot use inlet {dst_port}", file=sys.stderr)
-        return 1
-
-    # Create edge
-    edge = Edge(pd_lines=[src.id, src_port, dst.id, dst_port])
-    canvas.edge(edge)
-
-    save_patch(pdpy, path)
-
-    print(f"Connected: [{src.id}]{src_type}:{src_port} -> [{dst.id}]{dst_type}:{dst_port}")
-    return 0
-
-
-def cmd_list(args):
-    """List all objects in a patch."""
-    path = Path(args.patch)
-
-    if not path.exists():
-        print(f"File not found: {path}", file=sys.stderr)
-        return 1
-
-    pdpy = load_patch(path)
-    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
-    if canvas is None:
-        return 1
-
-    objects = list_objects(canvas)
-
-    subpatch_info = f" [{args.subpatch}]" if getattr(args, 'subpatch', None) else ""
-
-    if not objects:
-        print(f"(empty canvas{subpatch_info})")
-        return 0
-
-    print(f"Objects in {path.name}{subpatch_info}:")
-    for obj in objects:
-        args_str = f" {obj['args']}" if obj['args'] else ""
-        if obj['is_subpatch']:
-            print(f"  [{obj['id']}] {obj['type']} ({obj['child_count']} objects)")
-        else:
-            io_info = f"  # {obj['inlets']}in/{obj['outlets']}out" if args.verbose else ""
-            print(f"  [{obj['id']}] {obj['type']}{args_str}{io_info}")
-
-    # Also show connections
-    edges = getattr(canvas, 'edges', [])
-    if edges:
-        print(f"\nConnections:")
-        for edge in edges:
-            src_id = edge.source.id if hasattr(edge.source, 'id') else '?'
-            src_port = edge.source.port if hasattr(edge.source, 'port') else 0
-            dst_id = edge.sink.id if hasattr(edge.sink, 'id') else '?'
-            dst_port = edge.sink.port if hasattr(edge.sink, 'port') else 0
-            print(f"  [{src_id}]:{src_port} -> [{dst_id}]:{dst_port}")
-
-    return 0
-
-
-def cmd_delete(args):
-    """Delete an object from a patch."""
-    path = Path(args.patch)
-
-    if not path.exists():
-        print(f"File not found: {path}", file=sys.stderr)
-        return 1
-
-    pdpy = load_patch(path)
-    canvas = get_canvas(pdpy, getattr(args, 'subpatch', None))
-    if canvas is None:
-        return 1
-
-    obj = find_object(canvas, args.id)
-    if obj is None:
-        print(f"Object not found: {args.id}", file=sys.stderr)
-        return 1
-
-    # Remove from nodes
-    nodes = getattr(canvas, 'nodes', [])
-    obj_id = obj.id
-    obj_type = getattr(obj, 'className', getattr(obj, 'name', '?'))
-
-    if obj in nodes:
-        nodes.remove(obj)
-
-    # Remove connected edges
-    edges = getattr(canvas, 'edges', [])
-    edges_to_remove = []
-    for edge in edges:
-        src_id = edge.source.id if hasattr(edge.source, 'id') else None
-        dst_id = edge.sink.id if hasattr(edge.sink, 'id') else None
-        if src_id == obj_id or dst_id == obj_id:
-            edges_to_remove.append(edge)
-
-    for edge in edges_to_remove:
-        edges.remove(edge)
-
-    save_patch(pdpy, path)
-
-    print(f"Deleted [{obj_id}]: {obj_type}")
-    if edges_to_remove:
-        print(f"  (removed {len(edges_to_remove)} connection(s))")
-
     return 0
 
 
 def add_subpatch_arg(parser):
     """Add the --subpatch argument to a parser."""
     parser.add_argument('-s', '--subpatch',
-                       help='Target subpatch (e.g., "envelope" or "synth/filter")')
+                       help='Target subpatch name (list only)')
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CLI for programmatic Pure Data patch editing",
+        description="Safe CLI for Pure Data patch editing (preserves file structure)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     pdpatch new synth.pd                    # Create empty patch
+    pdpatch list synth.pd                   # Show objects with indices
+    pdpatch list synth.pd -v                # Show with inlet/outlet counts
     pdpatch add synth.pd osc~ 440           # Add oscillator
-    pdpatch add synth.pd dac~               # Add audio output
-    pdpatch list synth.pd                   # Show objects with IDs
-    pdpatch connect synth.pd 0 1            # Connect by ID
-    pdpatch connect synth.pd "osc~" "dac~"  # Connect by type
-    pdpatch delete synth.pd 0               # Delete object
+    pdpatch connect synth.pd 0 1            # Connect by index
+    pdpatch connect synth.pd 0 1 -o 0 -i 1  # Specify ports
 
-Subpatch examples:
-    pdpatch list synth.pd -s envelope       # List subpatch contents
-    pdpatch add synth.pd line~ -s envelope  # Add to subpatch
-    pdpatch list synth.pd -s voice/filter   # Nested subpatch
+Note: This version preserves file structure exactly.
+For complex edits, use direct .pd file editing with pd2ir -i for indices.
         """
     )
 
@@ -469,6 +463,12 @@ Subpatch examples:
     p_new = subparsers.add_parser('new', help='Create new patch')
     p_new.add_argument('patch', help='Output .pd file')
     p_new.add_argument('-f', '--force', action='store_true', help='Overwrite existing')
+
+    # list
+    p_list = subparsers.add_parser('list', help='List objects in patch')
+    p_list.add_argument('patch', help='Patch file')
+    p_list.add_argument('-v', '--verbose', action='store_true', help='Show inlet/outlet counts')
+    add_subpatch_arg(p_list)
 
     # add
     p_add = subparsers.add_parser('add', help='Add object to patch')
@@ -480,31 +480,23 @@ Subpatch examples:
     # connect
     p_connect = subparsers.add_parser('connect', help='Connect two objects')
     p_connect.add_argument('patch', help='Patch file')
-    p_connect.add_argument('src', help='Source object (ID, index, or "type args")')
-    p_connect.add_argument('dst', help='Destination object')
+    p_connect.add_argument('src', help='Source object index')
+    p_connect.add_argument('dst', help='Destination object index')
     p_connect.add_argument('-o', '--outlet', type=int, help='Source outlet (default: 0)')
     p_connect.add_argument('-i', '--inlet', type=int, help='Destination inlet (default: 0)')
-    add_subpatch_arg(p_connect)
-
-    # list
-    p_list = subparsers.add_parser('list', help='List objects in patch')
-    p_list.add_argument('patch', help='Patch file')
-    p_list.add_argument('-v', '--verbose', action='store_true', help='Show inlet/outlet counts')
-    add_subpatch_arg(p_list)
 
     # delete
-    p_delete = subparsers.add_parser('delete', help='Delete object from patch')
+    p_delete = subparsers.add_parser('delete', help='Delete object (not yet implemented)')
     p_delete.add_argument('patch', help='Patch file')
-    p_delete.add_argument('id', help='Object ID or type')
-    add_subpatch_arg(p_delete)
+    p_delete.add_argument('index', help='Object index')
 
     args = parser.parse_args()
 
     commands = {
         'new': cmd_new,
+        'list': cmd_list,
         'add': cmd_add,
         'connect': cmd_connect,
-        'list': cmd_list,
         'delete': cmd_delete,
     }
 

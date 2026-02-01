@@ -476,15 +476,15 @@ Then `git diff` will show semantic diffs for .pd files.
 
 ## Programmatic Patch Editing (pdpatch)
 
-The `pdpatch` CLI provides programmatic patch editing without manual index counting.
+The `pdpatch` CLI provides safe programmatic patch editing using text-based manipulation that preserves file structure exactly.
 
 ### Create and build a patch
 ```bash
 /Users/borismo/pdpy/pdpatch new synth.pd              # Create empty patch
-/Users/borismo/pdpy/pdpatch add synth.pd osc~ 440     # Add oscillator (prints ID)
-/Users/borismo/pdpy/pdpatch add synth.pd "*~" 0.5     # Add multiplier
+/Users/borismo/pdpy/pdpatch add synth.pd osc~ 440     # Add oscillator
+/Users/borismo/pdpy/pdpatch add synth.pd '*~' 0.5     # Add multiplier (quote *~)
 /Users/borismo/pdpy/pdpatch add synth.pd dac~         # Add audio output
-/Users/borismo/pdpy/pdpatch connect synth.pd 0 1      # Connect by ID
+/Users/borismo/pdpy/pdpatch connect synth.pd 0 1      # Connect by index
 /Users/borismo/pdpy/pdpatch connect synth.pd 1 2      # Connect multiplier to dac~
 ```
 
@@ -498,49 +498,32 @@ The `pdpatch` CLI provides programmatic patch editing without manual index count
 # Connections:
 #   [0]:0 -> [1]:0
 #   [1]:0 -> [2]:0
+
+/Users/borismo/pdpy/pdpatch list synth.pd -v   # With inlet/outlet counts
 ```
 
-### Connect by type name
+### Connecting objects
 ```bash
-/Users/borismo/pdpy/pdpatch connect synth.pd "osc~" "dac~"    # By type
-/Users/borismo/pdpy/pdpatch connect synth.pd "osc~ 440" 1     # By type+args
+/Users/borismo/pdpy/pdpatch connect synth.pd 0 1              # Default: outlet 0 -> inlet 0
 /Users/borismo/pdpy/pdpatch connect synth.pd 0 1 -o 1 -i 0    # Specify ports
 ```
 
-### Delete objects
-```bash
-/Users/borismo/pdpy/pdpatch delete synth.pd 1    # By ID
-/Users/borismo/pdpy/pdpatch delete synth.pd "dac~"  # By type
-```
+### How pdpatch works
 
-### Subpatch support
-```bash
-/Users/borismo/pdpy/pdpatch list synth.pd -s envelope     # List subpatch contents
-/Users/borismo/pdpy/pdpatch add synth.pd line~ -s envelope  # Add to subpatch
-/Users/borismo/pdpy/pdpatch connect synth.pd 0 1 -s envelope  # Connect in subpatch
-/Users/borismo/pdpy/pdpatch list synth.pd -s voice/filter   # Nested subpatch path
-```
+pdpatch uses **text-based editing** that:
+- Preserves file structure exactly (no reordering)
+- Correctly counts comments (`#X text`) as objects
+- Inserts new objects before the first `#X connect`
+- Appends connections at the end of the file
+- Validates inlet/outlet counts before connecting
 
-### When to use pdpatch vs direct .pd editing
+### Limitations
 
-| Use pdpatch | Use direct .pd editing |
-|-------------|------------------------|
-| **New patches** you create from scratch | **Existing patches** with comments |
-| Simple patches without `#X text` comments | Patches with GUI labels/comments |
-| Quick prototyping | Production patches |
-| Learning/experimenting | When pdpatch shows errors |
+- **Delete not implemented** - edit .pd file directly to delete objects
+- **Subpatch add not implemented** - only lists subpatch contents
+- **No type-based lookup** - use indices from `pdpatch list`
 
-**LIMITATION:** pdpatch uses pdpy's serialization which **reorders comments to the end of the file**. This breaks object indices in `#X connect` statements. For patches with `#X text` comments, **always use direct .pd editing**.
-
-**Safe workflow for existing patches:**
-```bash
-# 1. Get object indices
-pd2ir -i patch.pd
-
-# 2. Edit .pd file directly (don't use pdpatch add/connect)
-# 3. Validate changes
-pd2ir --validate patch.pd
-```
+For complex edits, use direct .pd editing with `pd2ir -i` for indices.
 
 ## Common Synth Patterns
 
