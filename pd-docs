@@ -1,0 +1,708 @@
+#!/usr/bin/env python3
+"""
+pd-docs - Living documentation system for Pure Data projects
+
+Maintains LLM-generated documentation with smart bidirectional linking.
+Uses content hashing to detect when docs need updating.
+
+Usage:
+    pd-docs init <project-dir>     # Generate initial documentation
+    pd-docs check [project-dir]    # Check for stale/broken refs
+    pd-docs update <file.pd>       # Update docs for changed file
+    pd-docs graph [project-dir]    # Show dependency graph
+"""
+
+import sys
+import json
+import hashlib
+import argparse
+from pathlib import Path
+from typing import Dict, List, Set, Tuple, Optional
+from dataclasses import dataclass, asdict
+from datetime import datetime
+
+# Add pdpy to path
+script_dir = Path(__file__).parent.resolve()
+if (script_dir / 'pdpy_lib').exists():
+    sys.path.insert(0, str(script_dir))
+
+from pdpy_lib.patching.pdpy import PdPy
+from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
+
+
+@dataclass
+class NodeRef:
+    """Reference from documentation to a code node."""
+    node_id: str
+    patch: str
+    hash: str  # Content hash for staleness detection
+    obj_type: str
+    args: List[str]
+    connections_out: List[str]  # Outgoing edge targets
+    doc_file: str
+    doc_section: str
+    # Stable identifiers
+    canvas: str = "c0"
+    x: int = 0
+    y: int = 0
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(**d)
+
+    @property
+    def position_key(self) -> str:
+        """Stable key based on position."""
+        return f"{self.canvas}@{self.x},{self.y}"
+
+
+@dataclass
+class PatchInfo:
+    """Information about a patch for documentation."""
+    path: str
+    name: str
+    dependencies: List[str]  # Abstractions this patch uses
+    dependents: List[str]    # Patches that use this one
+    inlets: List[dict]
+    outlets: List[dict]
+    nodes: List[dict]
+
+
+def compute_node_hash(node: dict, edges_out: List[dict]) -> str:
+    """Compute content hash for a node (type + args + connections)."""
+    content = {
+        'type': node.get('type', ''),
+        'args': node.get('args', []),
+        'connections': sorted([
+            f"{e['target']}:{e.get('target_port', 0)}"
+            for e in edges_out
+        ])
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def find_pd_files(project_dir: Path) -> List[Path]:
+    """Find all .pd files in project."""
+    return sorted(project_dir.rglob('*.pd'))
+
+
+def get_abstractions_used(ir_data: dict) -> Set[str]:
+    """Extract abstraction names used in a patch."""
+    abstractions = set()
+
+    # Known built-in objects (not abstractions)
+    builtins = {
+        'inlet', 'inlet~', 'outlet', 'outlet~',
+        'osc~', 'phasor~', 'noise~', 'dac~', 'adc~',
+        '+', '-', '*', '/', '+~', '-~', '*~', '/~',
+        'lop~', 'hip~', 'bp~', 'vcf~',
+        'delwrite~', 'delread~', 'vd~',
+        'pack', 'unpack', 'route', 'sel', 'moses',
+        'trigger', 't', 'bang', 'b', 'float', 'f',
+        'send', 's', 'receive', 'r', 'throw~', 'catch~',
+        'metro', 'delay', 'pipe', 'timer',
+        'line', 'line~', 'vline~', 'snapshot~',
+        'tabread~', 'tabwrite~', 'tabread4~',
+        'clip~', 'wrap~', 'abs~', 'sqrt~', 'pow~',
+        'mtof', 'ftom', 'dbtorms', 'rmstodb',
+        'loadbang', 'print', 'value', 'expr', 'expr~',
+        # Add more as needed
+    }
+
+    for node in ir_data.get('nodes', []):
+        obj_type = node.get('type', '')
+        if obj_type and obj_type not in builtins and not obj_type.startswith('pd '):
+            abstractions.add(obj_type)
+
+    return abstractions
+
+
+def analyze_patch(pd_file: Path) -> Optional[PatchInfo]:
+    """Analyze a single .pd file."""
+    try:
+        raw = loadPdFile(str(pd_file))
+        pd_lines = parsePdFileLines(raw)
+        pdpy = PdPy(name=pd_file.stem, pd_lines=pd_lines)
+        ir = pdpy.to_ir(patch_path=str(pd_file))
+        ir_data = ir.to_dict()
+    except Exception as e:
+        print(f"  Warning: Could not analyze {pd_file.name}: {e}", file=sys.stderr)
+        return None
+
+    # Extract interface (inlets/outlets)
+    inlets = []
+    outlets = []
+    nodes_info = []
+
+    for node in ir_data.get('nodes', []):
+        node_type = node.get('type', '')
+
+        if node_type in ('inlet', 'inlet~'):
+            inlets.append({
+                'id': node.get('id'),
+                'signal': node_type == 'inlet~',
+                'index': len(inlets)
+            })
+        elif node_type in ('outlet', 'outlet~'):
+            outlets.append({
+                'id': node.get('id'),
+                'signal': node_type == 'outlet~',
+                'index': len(outlets)
+            })
+        else:
+            # Get outgoing edges for this node
+            edges_out = [e for e in ir_data.get('edges', []) if e.get('source') == node.get('id')]
+
+            # Get position from layout
+            layout = node.get('layout', {})
+            x = layout.get('x', 0) if layout else 0
+            y = layout.get('y', 0) if layout else 0
+
+            nodes_info.append({
+                'id': node.get('id'),
+                'type': node_type,
+                'args': node.get('args', []),
+                'hash': compute_node_hash(node, edges_out),
+                'canvas': node.get('canvas', 'c0'),
+                'x': x,
+                'y': y
+            })
+
+    return PatchInfo(
+        path=str(pd_file),
+        name=pd_file.stem,
+        dependencies=list(get_abstractions_used(ir_data)),
+        dependents=[],  # Filled in later
+        inlets=inlets,
+        outlets=outlets,
+        nodes=nodes_info
+    )
+
+
+def build_dependency_graph(patches: Dict[str, PatchInfo]) -> Dict[str, PatchInfo]:
+    """Build bidirectional dependency links."""
+    # Map abstraction names to patch info
+    by_name = {p.name: p for p in patches.values()}
+
+    # Fill in dependents
+    for patch in patches.values():
+        for dep_name in patch.dependencies:
+            if dep_name in by_name:
+                by_name[dep_name].dependents.append(patch.name)
+
+    return patches
+
+
+def get_topological_order(patches: Dict[str, PatchInfo]) -> List[str]:
+    """Return patches in dependency order (leaves first)."""
+    visited = set()
+    order = []
+
+    def visit(name: str):
+        if name in visited:
+            return
+        visited.add(name)
+        if name in patches:
+            for dep in patches[name].dependencies:
+                visit(dep)
+        order.append(name)
+
+    for name in patches:
+        visit(name)
+
+    return order
+
+
+def generate_patch_doc(patch: PatchInfo, all_patches: Dict[str, PatchInfo]) -> str:
+    """Generate markdown documentation for a patch."""
+    lines = [
+        f"# {patch.name}",
+        "",
+        f"<!-- pd-docs: {patch.path} -->",
+        f"<!-- generated: {datetime.now().isoformat()} -->",
+        "",
+        "## Overview",
+        "",
+        f"*[LLM: Describe what {patch.name} does]*",
+        "",
+    ]
+
+    # Interface
+    if patch.inlets or patch.outlets:
+        lines.extend([
+            "## Interface",
+            "",
+        ])
+
+        if patch.inlets:
+            lines.append("### Inlets")
+            for inlet in patch.inlets:
+                sig = "~" if inlet['signal'] else ""
+                lines.append(f"- **inlet{sig} {inlet['index']}**: *[describe]*")
+                lines.append(f"  <!-- ref: {inlet['id']} -->")
+            lines.append("")
+
+        if patch.outlets:
+            lines.append("### Outlets")
+            for outlet in patch.outlets:
+                sig = "~" if outlet['signal'] else ""
+                lines.append(f"- **outlet{sig} {outlet['index']}**: *[describe]*")
+                lines.append(f"  <!-- ref: {outlet['id']} -->")
+            lines.append("")
+
+    # Dependencies
+    if patch.dependencies:
+        lines.extend([
+            "## Dependencies",
+            "",
+        ])
+        for dep in sorted(patch.dependencies):
+            if dep in all_patches:
+                lines.append(f"- [{dep}]({dep}.md)")
+            else:
+                lines.append(f"- `{dep}` (external/built-in)")
+        lines.append("")
+
+    # Used by
+    if patch.dependents:
+        lines.extend([
+            "## Used By",
+            "",
+        ])
+        for dep in sorted(patch.dependents):
+            lines.append(f"- [{dep}]({dep}.md)")
+        lines.append("")
+
+    # Key nodes (non-trivial objects)
+    key_nodes = [n for n in patch.nodes if n['type'] not in ('inlet', 'outlet', 'inlet~', 'outlet~', 'text')]
+    if key_nodes:
+        lines.extend([
+            "## Implementation",
+            "",
+        ])
+        for node in key_nodes[:10]:  # Limit to first 10
+            args_str = ' '.join(str(a) for a in node['args']) if node['args'] else ''
+            lines.append(f"- `{node['type']} {args_str}`: *[describe role]*")
+            lines.append(f"  <!-- ref: {node['id']} hash:{node['hash']} -->")
+        if len(key_nodes) > 10:
+            lines.append(f"- ... and {len(key_nodes) - 10} more objects")
+        lines.append("")
+
+    return '\n'.join(lines)
+
+
+def generate_index_doc(patches: Dict[str, PatchInfo], project_dir: Path) -> str:
+    """Generate index/overview documentation."""
+    order = get_topological_order(patches)
+
+    lines = [
+        f"# {project_dir.name} - System Documentation",
+        "",
+        f"<!-- pd-docs-index -->",
+        f"<!-- generated: {datetime.now().isoformat()} -->",
+        "",
+        "## Overview",
+        "",
+        "*[LLM: Describe the overall system architecture]*",
+        "",
+        "## Patch Hierarchy",
+        "",
+    ]
+
+    # Show as tree
+    roots = [p for p in patches.values() if not p.dependents]
+
+    def format_tree(name: str, indent: int = 0) -> List[str]:
+        result = []
+        prefix = "  " * indent
+        if name in patches:
+            patch = patches[name]
+            deps_str = f" (uses: {', '.join(patch.dependencies)})" if patch.dependencies else ""
+            result.append(f"{prefix}- [{name}]({name}.md){deps_str}")
+            # Don't recurse into dependencies here - just show flat list
+        return result
+
+    for root in roots:
+        lines.extend(format_tree(root.name))
+
+    lines.extend([
+        "",
+        "## All Patches",
+        "",
+        "| Patch | Dependencies | Used By |",
+        "|-------|--------------|---------|",
+    ])
+
+    for name in order:
+        if name in patches:
+            patch = patches[name]
+            deps = ', '.join(patch.dependencies) or '-'
+            used_by = ', '.join(patch.dependents) or '-'
+            lines.append(f"| [{name}]({name}.md) | {deps} | {used_by} |")
+
+    lines.append("")
+    return '\n'.join(lines)
+
+
+def save_refs(refs: Dict[str, NodeRef], refs_file: Path):
+    """Save reference index."""
+    data = {k: v.to_dict() for k, v in refs.items()}
+    refs_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(refs_file, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def load_refs(refs_file: Path) -> Dict[str, NodeRef]:
+    """Load reference index."""
+    if not refs_file.exists():
+        return {}
+    with open(refs_file) as f:
+        data = json.load(f)
+    return {k: NodeRef.from_dict(v) for k, v in data.items()}
+
+
+def build_refs_from_patches(patches: Dict[str, PatchInfo], docs_dir: Path) -> Dict[str, NodeRef]:
+    """Build reference index from analyzed patches.
+
+    Uses position as stable key: patch::canvas@x,y
+    """
+    refs = {}
+
+    for patch in patches.values():
+        doc_file = f"{patch.name}.md"
+
+        for node in patch.nodes:
+            canvas = node.get('canvas', 'c0')
+            x = node.get('x', 0)
+            y = node.get('y', 0)
+            # Use position as stable key
+            ref_key = f"{patch.name}::{canvas}@{x},{y}"
+
+            refs[ref_key] = NodeRef(
+                node_id=node['id'],
+                patch=patch.path,
+                hash=node['hash'],
+                obj_type=node['type'],
+                args=node['args'],
+                connections_out=[],
+                doc_file=doc_file,
+                doc_section="implementation",
+                canvas=canvas,
+                x=x,
+                y=y
+            )
+
+    return refs
+
+
+def cmd_init(args):
+    """Initialize documentation for a project."""
+    project_dir = Path(args.project_dir).resolve()
+
+    if not project_dir.exists():
+        print(f"Error: Directory not found: {project_dir}", file=sys.stderr)
+        return 1
+
+    print(f"Initializing documentation for: {project_dir}")
+
+    # Find all .pd files
+    pd_files = find_pd_files(project_dir)
+    if not pd_files:
+        print("No .pd files found", file=sys.stderr)
+        return 1
+
+    print(f"Found {len(pd_files)} .pd files")
+
+    # Analyze each patch
+    patches = {}
+    for pd_file in pd_files:
+        print(f"  Analyzing: {pd_file.name}")
+        info = analyze_patch(pd_file)
+        if info:
+            patches[info.name] = info
+
+    # Build dependency graph
+    patches = build_dependency_graph(patches)
+
+    # Create docs directory
+    docs_dir = project_dir / 'docs'
+    docs_dir.mkdir(exist_ok=True)
+    pd_docs_dir = project_dir / '.pd-docs'
+    pd_docs_dir.mkdir(exist_ok=True)
+
+    # Generate docs in dependency order (leaves first)
+    order = get_topological_order(patches)
+    print(f"\nGenerating docs in order: {' -> '.join(order)}")
+
+    for name in order:
+        if name not in patches:
+            continue
+        patch = patches[name]
+        doc_content = generate_patch_doc(patch, patches)
+        doc_file = docs_dir / f"{name}.md"
+        doc_file.write_text(doc_content)
+        print(f"  Created: {doc_file.name}")
+
+    # Generate index
+    index_content = generate_index_doc(patches, project_dir)
+    index_file = docs_dir / 'index.md'
+    index_file.write_text(index_content)
+    print(f"  Created: index.md")
+
+    # Build and save refs
+    refs = build_refs_from_patches(patches, docs_dir)
+    refs_file = pd_docs_dir / 'refs.json'
+    save_refs(refs, refs_file)
+    print(f"\nSaved {len(refs)} node references to .pd-docs/refs.json")
+
+    # Summary
+    print(f"\n✓ Documentation initialized")
+    print(f"  Docs: {docs_dir}")
+    print(f"  Refs: {refs_file}")
+    print(f"\nNext steps:")
+    print(f"  1. Edit docs/*.md to add descriptions")
+    print(f"  2. Run 'pd-docs check' after code changes")
+
+    return 0
+
+
+def cmd_check(args):
+    """Check for stale or broken references."""
+    project_dir = Path(args.project_dir or '.').resolve()
+
+    refs_file = project_dir / '.pd-docs' / 'refs.json'
+    if not refs_file.exists():
+        print(f"No refs.json found. Run 'pd-docs init' first.", file=sys.stderr)
+        return 1
+
+    print(f"Checking references in: {project_dir}")
+
+    refs = load_refs(refs_file)
+    print(f"Loaded {len(refs)} references")
+
+    stale = []
+    broken = []
+
+    # Group refs by patch
+    by_patch = {}
+    for ref_key, ref in refs.items():
+        if ref.patch not in by_patch:
+            by_patch[ref.patch] = []
+        by_patch[ref.patch].append((ref_key, ref))
+
+    # Check each patch
+    for patch_path, patch_refs in by_patch.items():
+        pd_file = Path(patch_path)
+        if not pd_file.exists():
+            for ref_key, ref in patch_refs:
+                broken.append((ref_key, ref, "patch file deleted"))
+            continue
+
+        # Re-analyze the patch
+        info = analyze_patch(pd_file)
+        if not info:
+            continue
+
+        # Build current map by position (stable key)
+        current_by_pos = {}
+        for n in info.nodes:
+            pos_key = f"{n.get('canvas', 'c0')}@{n.get('x', 0)},{n.get('y', 0)}"
+            current_by_pos[pos_key] = n
+
+        # Check each ref by position
+        for ref_key, ref in patch_refs:
+            pos_key = f"{ref.canvas}@{ref.x},{ref.y}"
+            if pos_key not in current_by_pos:
+                broken.append((ref_key, ref, "node deleted"))
+            else:
+                current = current_by_pos[pos_key]
+                if current['hash'] != ref.hash:
+                    stale.append((ref_key, ref, current['hash']))
+
+    # Report
+    if not stale and not broken:
+        print("\n✓ All references up to date")
+        return 0
+
+    if broken:
+        print(f"\n✗ {len(broken)} broken references:")
+        for ref_key, ref, reason in broken:
+            print(f"  {ref.doc_file}#{ref.doc_section}: {ref.obj_type} - {reason}")
+
+    if stale:
+        print(f"\n⚠ {len(stale)} stale references (code changed):")
+        for ref_key, ref, new_hash in stale:
+            print(f"  {ref.doc_file}#{ref.doc_section}: {ref.obj_type}")
+            print(f"    was: {ref.hash}, now: {new_hash}")
+
+    print(f"\nRun 'pd-docs update' to refresh documentation")
+    return 1
+
+
+def cmd_graph(args):
+    """Show dependency graph."""
+    project_dir = Path(args.project_dir or '.').resolve()
+
+    pd_files = find_pd_files(project_dir)
+    if not pd_files:
+        print("No .pd files found", file=sys.stderr)
+        return 1
+
+    patches = {}
+    for pd_file in pd_files:
+        info = analyze_patch(pd_file)
+        if info:
+            patches[info.name] = info
+
+    patches = build_dependency_graph(patches)
+    order = get_topological_order(patches)
+
+    print("Dependency Graph:")
+    print("=================")
+    print()
+
+    # Find roots (patches with no dependents)
+    roots = [name for name in order if name in patches and not patches[name].dependents]
+
+    def print_tree(name: str, indent: int = 0, visited: set = None):
+        if visited is None:
+            visited = set()
+        if name in visited:
+            print("  " * indent + f"└─ {name} (circular)")
+            return
+        visited.add(name)
+
+        if name not in patches:
+            print("  " * indent + f"└─ {name} (external)")
+            return
+
+        patch = patches[name]
+        marker = "└─" if indent > 0 else ""
+        print("  " * indent + f"{marker} {name}")
+
+        for dep in patch.dependencies:
+            print_tree(dep, indent + 1, visited.copy())
+
+    for root in roots:
+        print_tree(root)
+        print()
+
+    return 0
+
+
+def cmd_update(args):
+    """Update docs for a specific file."""
+    pd_file = Path(args.file).resolve()
+
+    if not pd_file.exists():
+        print(f"File not found: {pd_file}", file=sys.stderr)
+        return 1
+
+    # Find project root (directory with .pd-docs)
+    project_dir = pd_file.parent
+    while project_dir != project_dir.parent:
+        if (project_dir / '.pd-docs').exists():
+            break
+        project_dir = project_dir.parent
+    else:
+        print("Could not find .pd-docs directory. Run 'pd-docs init' first.", file=sys.stderr)
+        return 1
+
+    refs_file = project_dir / '.pd-docs' / 'refs.json'
+    docs_dir = project_dir / 'docs'
+
+    print(f"Updating docs for: {pd_file.name}")
+
+    # Re-analyze the patch
+    info = analyze_patch(pd_file)
+    if not info:
+        return 1
+
+    # Load existing refs
+    refs = load_refs(refs_file)
+
+    # Find and update refs for this patch (using position as stable key)
+    updated = 0
+    for node in info.nodes:
+        canvas = node.get('canvas', 'c0')
+        x = node.get('x', 0)
+        y = node.get('y', 0)
+        ref_key = f"{info.name}::{canvas}@{x},{y}"
+
+        if ref_key in refs:
+            old_hash = refs[ref_key].hash
+            if old_hash != node['hash']:
+                print(f"  Updated: {node['type']} ({old_hash} -> {node['hash']})")
+                updated += 1
+
+        refs[ref_key] = NodeRef(
+            node_id=node['id'],
+            patch=str(pd_file),
+            hash=node['hash'],
+            obj_type=node['type'],
+            args=node['args'],
+            connections_out=[],
+            doc_file=f"{info.name}.md",
+            doc_section="implementation",
+            canvas=canvas,
+            x=x,
+            y=y
+        )
+
+    # Save updated refs
+    save_refs(refs, refs_file)
+
+    print(f"\n✓ Updated {updated} references")
+    print(f"  Note: Review {docs_dir / info.name}.md for accuracy")
+
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Living documentation system for Pure Data projects",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    pd-docs init myproject/        # Generate initial docs
+    pd-docs check                  # Find stale references
+    pd-docs update synth.pd        # Update after editing
+    pd-docs graph                  # Show dependency tree
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # init
+    p_init = subparsers.add_parser('init', help='Initialize documentation')
+    p_init.add_argument('project_dir', help='Project directory')
+
+    # check
+    p_check = subparsers.add_parser('check', help='Check for stale refs')
+    p_check.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
+
+    # graph
+    p_graph = subparsers.add_parser('graph', help='Show dependency graph')
+    p_graph.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
+
+    # update
+    p_update = subparsers.add_parser('update', help='Update docs for a file')
+    p_update.add_argument('file', help='.pd file that changed')
+
+    args = parser.parse_args()
+
+    commands = {
+        'init': cmd_init,
+        'check': cmd_check,
+        'graph': cmd_graph,
+        'update': cmd_update,
+    }
+
+    return commands[args.command](args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
