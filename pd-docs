@@ -567,6 +567,7 @@ def cmd_report(args):
     stale = []      # Content changed
     deleted = []    # Node removed
     new_nodes = []  # Node added, no doc
+    undocumented = []  # Has placeholder, not real docs
 
     # Group refs by patch
     by_patch = {}
@@ -633,13 +634,87 @@ def cmd_report(args):
                     'reason': 'patch file deleted'
                 })
 
+    # Check for undocumented nodes (placeholders still present)
+    for patch_name, info in patches.items():
+        doc_path = docs_dir / f"{patch_name}.md"
+        if not doc_path.exists():
+            continue
+
+        doc_text = doc_path.read_text()
+
+        # Check for placeholder patterns
+        placeholders = [
+            '*[LLM:',
+            '*[describe]',
+            '*[describe role]*',
+        ]
+
+        # Find all ref comments and check if preceding line is placeholder
+        lines = doc_text.split('\n')
+        for i, line in enumerate(lines):
+            if '<!-- ref:' in line and i > 0:
+                prev_line = lines[i-1]
+                has_placeholder = any(p in prev_line for p in placeholders)
+                if has_placeholder:
+                    # Extract node info from ref comment
+                    import re
+                    ref_match = re.search(r'<!-- ref: ([^\s]+)', line)
+                    if ref_match:
+                        node_id = ref_match.group(1)
+                        # Find the object type from the line before
+                        type_match = re.search(r'`([^`]+)`', prev_line)
+                        obj_type = type_match.group(1) if type_match else 'unknown'
+                        undocumented.append({
+                            'patch': patch_name,
+                            'type': obj_type,
+                            'node_id': node_id,
+                            'doc_file': f"{patch_name}.md",
+                            'line_num': i
+                        })
+
+        # Also check overview placeholder
+        if '*[LLM: Describe what' in doc_text or '*[LLM: Describe the overall' in doc_text:
+            undocumented.append({
+                'patch': patch_name,
+                'type': '(overview)',
+                'node_id': 'overview',
+                'doc_file': f"{patch_name}.md",
+                'line_num': 0
+            })
+
+        # Check if all sends/receives are documented
+        # These are the key interface points that MUST be documented
+        for node in info.nodes:
+            node_type = node.get('type', '')
+            # Check for send/receive objects
+            if node_type in ('s', 'r', 'send', 'receive', 'send~', 'receive~', 'throw~', 'catch~'):
+                args = node.get('args', [])
+                symbol_name = args[0] if args else ''
+                # Check if this symbol is mentioned in the doc
+                if symbol_name and symbol_name not in doc_text:
+                    undocumented.append({
+                        'patch': patch_name,
+                        'type': f"{node_type} {symbol_name}",
+                        'node_id': node.get('id', ''),
+                        'doc_file': f"{patch_name}.md",
+                        'line_num': 0,
+                        'reason': 'symbol not mentioned in docs'
+                    })
+
     # Output report
-    if not stale and not deleted and not new_nodes:
+    if not stale and not deleted and not new_nodes and not undocumented:
         print("STATUS: UP_TO_DATE")
-        print("All documentation is current.")
+        print("All documentation is current and complete.")
         return 0
 
     print("STATUS: NEEDS_UPDATE")
+    print()
+
+    # Coverage stats
+    total_nodes = sum(len(info.nodes) for info in patches.values())
+    undoc_count = len(undocumented)
+    coverage = ((total_nodes - undoc_count) / total_nodes * 100) if total_nodes > 0 else 0
+    print(f"Coverage: {coverage:.1f}% ({total_nodes - undoc_count}/{total_nodes} nodes documented)")
     print()
 
     if stale:
@@ -684,6 +759,25 @@ def cmd_report(args):
             print(f"  - Position: {item['pos']}")
             print(f"  - Reason: {reason}")
             print(f"  - Doc: {item['doc_file']} (remove reference)")
+            print()
+
+    if undocumented:
+        # Group by patch for cleaner output
+        by_patch_undoc = {}
+        for item in undocumented:
+            if item['patch'] not in by_patch_undoc:
+                by_patch_undoc[item['patch']] = []
+            by_patch_undoc[item['patch']].append(item)
+
+        print(f"## UNDOCUMENTED ({len(undocumented)} placeholders remaining)")
+        print()
+        for patch_name, items in sorted(by_patch_undoc.items()):
+            print(f"### {patch_name}.md")
+            for item in items:
+                if item['type'] == '(overview)':
+                    print(f"  - Overview section needs description")
+                else:
+                    print(f"  - `{item['type']}`: needs description")
             print()
 
     print("---")
