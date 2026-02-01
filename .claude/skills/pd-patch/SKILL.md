@@ -525,12 +525,22 @@ The `pdpatch` CLI provides programmatic patch editing without manual index count
 
 | Use pdpatch | Use direct .pd editing |
 |-------------|------------------------|
-| Adding objects to existing patches | Complex multi-object changes |
-| Connecting objects by ID/type | Precise position control |
-| Quick prototyping | Editing arrays/data structures |
-| Batch operations via scripts | When pdpatch shows errors |
+| **New patches** you create from scratch | **Existing patches** with comments |
+| Simple patches without `#X text` comments | Patches with GUI labels/comments |
+| Quick prototyping | Production patches |
+| Learning/experimenting | When pdpatch shows errors |
 
-**Note:** pdpatch handles object index counting automatically. For complex edits, use `pd2ir -i` to get object indices, then edit the .pd file directly.
+**LIMITATION:** pdpatch uses pdpy's serialization which **reorders comments to the end of the file**. This breaks object indices in `#X connect` statements. For patches with `#X text` comments, **always use direct .pd editing**.
+
+**Safe workflow for existing patches:**
+```bash
+# 1. Get object indices
+pd2ir -i patch.pd
+
+# 2. Edit .pd file directly (don't use pdpatch add/connect)
+# 3. Validate changes
+pd2ir --validate patch.pd
+```
 
 ## Common Synth Patterns
 
