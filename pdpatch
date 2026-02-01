@@ -35,6 +35,13 @@ from pdpy_lib.connections.edge import Edge
 from pdpy_lib.connections.iolet import Iolet
 from pdpy_lib.utilities.utils import loadPdFile, parsePdFileLines
 
+# Try to import the registry for connection validation
+try:
+    from pdpy_lib.ir.registry import get_registry
+    REGISTRY = get_registry()
+except ImportError:
+    REGISTRY = None
+
 
 def load_patch(path: Path) -> PdPy:
     """Load a .pd file into PdPy."""
@@ -100,6 +107,56 @@ def get_canvas(pdpy: PdPy, subpatch: str = None):
     return canvas
 
 
+def get_next_position(canvas) -> tuple:
+    """Calculate a reasonable position for a new object.
+
+    Finds the lowest object in the canvas and places the new one below it.
+    Uses a grid-based layout with reasonable spacing.
+    """
+    nodes = getattr(canvas, 'nodes', [])
+
+    if not nodes:
+        return (50, 50)
+
+    # Find the maximum y position among existing objects
+    max_y = 50
+    for node in nodes:
+        if hasattr(node, 'position') and node.position:
+            y = getattr(node.position, 'y', 0) or 0
+            if y > max_y:
+                max_y = y
+
+    # Place new object 40 pixels below the lowest one
+    # But cap at reasonable values to avoid runaway positions
+    new_y = min(max_y + 40, 500)
+
+    return (50, new_y)
+
+
+def get_object_io_count(obj) -> tuple:
+    """Get inlet and outlet count for an object using the registry.
+
+    Returns (inlet_count, outlet_count). Returns (1, 1) as default.
+    """
+    if REGISTRY is None:
+        return (1, 1)
+
+    obj_type = getattr(obj, 'className', None)
+    if not obj_type:
+        return (1, 1)
+
+    # Get args - handle pdpy's space-joined format
+    args = []
+    if hasattr(obj, 'args') and obj.args:
+        for arg in obj.args:
+            args.extend(str(arg).split())
+
+    try:
+        return REGISTRY.get_io_count(obj_type, args)
+    except:
+        return (1, 1)
+
+
 def list_objects(canvas) -> list:
     """List all objects with their IDs."""
     objects = []
@@ -119,6 +176,10 @@ def list_objects(canvas) -> list:
             child_count = 0
 
         obj_id = getattr(node, 'id', i)
+
+        # Get IO counts for validation info
+        inlet_count, outlet_count = get_object_io_count(node)
+
         objects.append({
             'id': obj_id,
             'index': i,
@@ -126,6 +187,8 @@ def list_objects(canvas) -> list:
             'args': args_str,
             'is_subpatch': is_subpatch,
             'child_count': child_count,
+            'inlets': inlet_count,
+            'outlets': outlet_count,
         })
 
     return objects
@@ -200,10 +263,8 @@ def cmd_add(args):
     obj_type = args.type
     obj_args = args.args if args.args else []
 
-    # Calculate position - stack objects vertically
-    nodes = getattr(canvas, 'nodes', [])
-    x = 50
-    y = 50 + len(nodes) * 40
+    # Calculate position - find a reasonable spot
+    x, y = get_next_position(canvas)
 
     # Handle special types
     if obj_type == 'msg':
@@ -257,14 +318,29 @@ def cmd_connect(args):
     src_port = args.outlet if args.outlet is not None else 0
     dst_port = args.inlet if args.inlet is not None else 0
 
+    # Validate connection using registry
+    src_type = getattr(src, 'className', getattr(src, 'name', '?'))
+    dst_type = getattr(dst, 'className', getattr(dst, 'name', '?'))
+
+    _, src_outlet_count = get_object_io_count(src)
+    dst_inlet_count, _ = get_object_io_count(dst)
+
+    # Check outlet validity
+    if src_port >= src_outlet_count:
+        print(f"Error: {src_type} only has {src_outlet_count} outlet(s), cannot use outlet {src_port}", file=sys.stderr)
+        return 1
+
+    # Check inlet validity
+    if dst_port >= dst_inlet_count:
+        print(f"Error: {dst_type} only has {dst_inlet_count} inlet(s), cannot use inlet {dst_port}", file=sys.stderr)
+        return 1
+
     # Create edge
     edge = Edge(pd_lines=[src.id, src_port, dst.id, dst_port])
     canvas.edge(edge)
 
     save_patch(pdpy, path)
 
-    src_type = getattr(src, 'className', getattr(src, 'name', '?'))
-    dst_type = getattr(dst, 'className', getattr(dst, 'name', '?'))
     print(f"Connected: [{src.id}]{src_type}:{src_port} -> [{dst.id}]{dst_type}:{dst_port}")
     return 0
 
@@ -296,7 +372,8 @@ def cmd_list(args):
         if obj['is_subpatch']:
             print(f"  [{obj['id']}] {obj['type']} ({obj['child_count']} objects)")
         else:
-            print(f"  [{obj['id']}] {obj['type']}{args_str}")
+            io_info = f"  # {obj['inlets']}in/{obj['outlets']}out" if args.verbose else ""
+            print(f"  [{obj['id']}] {obj['type']}{args_str}{io_info}")
 
     # Also show connections
     edges = getattr(canvas, 'edges', [])
@@ -412,6 +489,7 @@ Subpatch examples:
     # list
     p_list = subparsers.add_parser('list', help='List objects in patch')
     p_list.add_argument('patch', help='Patch file')
+    p_list.add_argument('-v', '--verbose', action='store_true', help='Show inlet/outlet counts')
     add_subpatch_arg(p_list)
 
     # delete
