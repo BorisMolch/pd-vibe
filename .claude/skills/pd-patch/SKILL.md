@@ -7,6 +7,30 @@ description: Pure Data (Pd) patch analysis and editing. Use when working with .p
 
 Analyze and edit Pure Data (.pd) patches using the IR (Intermediate Representation) system for semantic understanding.
 
+## IMPORTANT: Check Existing Documentation First
+
+**Before running pd2ir or reading raw .pd files**, always check for existing documentation:
+
+```bash
+# For Jambl-Pd project:
+ls /Users/borismo/Jambl-iOS/Jambl-Pd/docs/
+cat /Users/borismo/Jambl-iOS/Jambl-Pd/docs/<patch-name>.md
+```
+
+The Jambl-Pd project has **88+ documented abstractions** with:
+- Overview and purpose
+- Argument descriptions
+- Inlet/outlet interface
+- Send/receive symbols
+- Implementation details ("How It Works")
+- Dependencies and consumers
+
+**Only use pd2ir for:**
+- Patches without existing docs
+- Deep debugging (--state for audio bleed)
+- Verifying docs are current (check_docs.py)
+- Generating fresh analysis when docs are stale
+
 ## Quick Start
 
 ### Analyze a patch
