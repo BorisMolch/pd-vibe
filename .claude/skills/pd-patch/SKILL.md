@@ -582,31 +582,71 @@ The `pd-docs` tool maintains living documentation for Pd projects with smart cod
 
 ### Initialize documentation
 ```bash
-/Users/borismo/pdpy/pd-docs init <project-dir>
+/Users/borismo/pdpy/pd2ir --doc externals/myAbstraction.pd   # Single file
+/Users/borismo/pdpy/pd2ir --doc externals/                   # Batch mode
 ```
-Generates `docs/` folder with markdown files and `.pd-docs/refs.json` for tracking.
+Generates markdown files alongside .pd files with:
+- Argument documentation (inferred from `$N` usage patterns)
+- Inlet/outlet interface descriptions
+- Send/receive symbol references
+- Dependency chains
+
+### Documentation linking
+
+Generated docs include metadata comments for tracking:
+```markdown
+<!-- pd-docs: /path/to/source.pd -->
+<!-- generated: 2026-02-01T20:06:15 -->
+```
 
 ### Check for stale documentation
 ```bash
-/Users/borismo/pdpy/pd-docs report <project-dir>
+python /Users/borismo/pdpy/check_docs.py /path/to/docs/      # Basic check
+python /Users/borismo/pdpy/check_docs.py /path/to/docs/ -v   # Verbose
 ```
-**Use this after editing .pd files.** Outputs LLM-friendly report:
-- **STALE**: nodes with changed args/connections
-- **NEW**: nodes added without doc entries
-- **DELETED**: nodes removed (orphan doc refs)
+
+**Output:**
+```
+Documentation Status: /path/to/docs/
+==================================================
+
+STALE (2 files - source changed):
+   sampler~.md
+   clock.md
+
+MISSING SOURCE (1 files):
+   old_module.md -> /path/to/old_module.pd
+
+OK: 85 files up-to-date
+```
+
+The script compares timestamps between documentation and source .pd files.
 
 ### Update workflow (for Claude)
 
 After editing a .pd file:
-1. Run `pd-docs report` to see what changed
-2. Update the relevant doc sections in `docs/*.md`
-3. Run `pd-docs update <changed-file.pd>` to sync refs
+1. Run `check_docs.py` to see what's stale
+2. Re-generate with `pd2ir --doc <changed-file.pd>`
+3. Review and enhance the generated documentation
 
-### Other commands
-```bash
-/Users/borismo/pdpy/pd-docs check <project>   # Quick stale check (less detail)
-/Users/borismo/pdpy/pd-docs graph <project>   # Show dependency tree
-```
+### Jambl-Pd Documentation
+
+The Jambl-Pd project has comprehensive documentation at `/Users/borismo/Jambl-iOS/Jambl-Pd/docs/`:
+- **88+ documented abstractions** covering samplers, effects, grooves, loaders
+- **System architecture** in `index.md` with signal flow diagrams
+- **Dependency tracking** (Used By / Dependencies sections)
+
+Key subsystems documented:
+- Sampler hierarchy: `polysampler~` → `sampler-voice~` → `sampler~`
+- Groove system: `groove~` → `grooveLoader` → `grooveRegion`
+- Recording: `recordingBuffer`, `tapBuffer`, `recorder`
+- Effects: `vfreeverb_`, `compressor~`, `3eq~`
+
+### Current limitations
+
+- **No hash-based change detection**: Uses timestamps only
+- **No dependency-aware flagging**: Changing `sampler~.pd` won't automatically flag `polysampler~.md` as needing review
+- **Manual re-generation required**: No auto-sync on file save
 
 ## Resources
 
