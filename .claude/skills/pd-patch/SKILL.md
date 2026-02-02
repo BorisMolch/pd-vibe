@@ -601,26 +601,28 @@ Generated docs include metadata comments for tracking:
 
 ### Check for stale documentation
 ```bash
-python /Users/borismo/pdpy/check_docs.py /path/to/docs/      # Basic check
-python /Users/borismo/pdpy/check_docs.py /path/to/docs/ -v   # Verbose
+python3 /Users/borismo/pdpy/check_docs.py /path/to/project/      # Hash-based (uses .pd-docs/refs.json)
+python3 /Users/borismo/pdpy/check_docs.py /path/to/project/ -v   # Verbose
+python3 /Users/borismo/pdpy/check_docs.py /path/to/docs/ -t      # Timestamp-only fallback
 ```
 
-**Output:**
+**Hash-based output (default):**
 ```
-Documentation Status: /path/to/docs/
-==================================================
+Documentation Status (hash-based): /path/to/project/
+============================================================
 
-STALE (2 files - source changed):
-   sampler~.md
-   clock.md
+STALE (2 docs - content changed):
+   sampler~.md (sampler~.pd)
+      - *~: a1b2c3 → d4e5f6
+      - tabread4~: 112233 → 445566
 
-MISSING SOURCE (1 files):
+MISSING SOURCE (1 patches):
    old_module.md -> /path/to/old_module.pd
 
-OK: 85 files up-to-date
+OK: 85 docs up-to-date
 ```
 
-The script compares timestamps between documentation and source .pd files.
+Hash-based checking compares content hashes stored in `.pd-docs/refs.json` against current .pd file state. This detects actual content changes (args, connections) rather than just file timestamps.
 
 ### Update workflow (for Claude)
 
@@ -644,9 +646,9 @@ Key subsystems documented:
 
 ### Current limitations
 
-- **No hash-based change detection**: Uses timestamps only
-- **No dependency-aware flagging**: Changing `sampler~.pd` won't automatically flag `polysampler~.md` as needing review
+- **No dependency-aware flagging**: Changing `sampler~.pd` won't automatically flag `polysampler~.md` as needing review (dependency chain not tracked)
 - **Manual re-generation required**: No auto-sync on file save
+- **refs.json required for hash mode**: Run `pd-docs init` first, or use `-t` for timestamp fallback
 
 ## Resources
 
