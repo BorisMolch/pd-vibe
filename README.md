@@ -2,25 +2,44 @@
 
 `pd-vibe` is a fork of [`pdpy`](https://github.com/pdpy-org/pdpy) focused on vibe-coding workflows for Pure Data patches.
 
-## Fork Relationship
+## Feature Highlights
 
-- This project builds on upstream `pdpy` and keeps compatibility with `pdpy_lib` internals.
-- The Python import path is still:
+- `pd2ir`: convert `.pd` patches into machine-friendly IR JSON + human-friendly DSL.
+- `pdpatch`: safe CLI editing for `.pd` files while preserving file structure.
+- `pddiff`: semantic diffs for patches (more useful than raw line diffs).
+- `pd-docs`: living docs pipeline (`init`, `check`, `report`, `update`, `html`).
+- `check_docs.py`: hash-based stale-doc detection for CI and local checks.
+
+## What Comes From pdpy vs What Is New
+
+`pd-vibe` is a real fork, not a rewrite.
+
+Reused from upstream `pdpy`:
+- Core parser/object model via `pdpy_lib.patching.pdpy.PdPy`
+- File loading/parsing helpers in `pdpy_lib.utilities.utils`
+- Most of the existing `pdpy_lib` module structure and behavior
+
+New in `pd-vibe`:
+- New CLIs: `pdpatch`, `pddiff`, `pd-docs`, `check_docs.py`
+- Extended `pd2ir` capabilities (`--indices`, `--annotate`, `--doc`, `--doc-json`, `--state`, `--screenshot`)
+- New/extended IR modules in `pdpy_lib/ir` (`docgen`, `state`, `screenshot`, `visualize`, plus DSL/registry/build improvements)
+- Additional parser/compatibility fix in `pdpy_lib/objects/obj.py`
+
+Current code split from fork baseline (`37dd744`) to current:
+- CLI/tooling layer: `+2339` insertions across `pd2ir`, `pdpatch`, `pddiff`, `pd-docs`, `check_docs.py`
+- `pdpy_lib` internals: `+2500 / -104` lines changed
+
+Compatibility note:
 
 ```python
 import pdpy_lib as pdpy
 ```
 
-- New tooling in this fork:
-  - `pd2ir`
-  - `pdpatch`
-  - `pddiff`
-  - `pd-docs`
-  - `check_docs.py`
+The internal import path is still `pdpy_lib` for compatibility.
 
 ## Installation
 
-### From source (recommended right now)
+### From source (recommended)
 
 ```bash
 git clone git@github.com:BorisMolch/pd-vibe.git
@@ -31,33 +50,33 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### From PyPI (after first publish)
+### From PyPI (after publish)
 
 ```bash
 pip install pd-vibe
 ```
 
-## Tool Quickstart
+## Quickstart
 
 ```bash
 # Convert patch to IR + DSL
 ./pd2ir my_patch.pd
 
-# Validate syntax without writing outputs
+# Validate syntax only
 ./pd2ir --validate my_patch.pd
 
-# Safe patch edits
+# Edit safely (root canvas)
 ./pdpatch list my_patch.pd -v
 ./pdpatch add my_patch.pd osc~ 440
 ./pdpatch connect my_patch.pd 0 1
 
-# Semantic diff (working tree vs HEAD)
+# Semantic diff
 ./pddiff my_patch.pd
 
 # Docs workflow
 ./pd-docs init path/to/project
-./pd-docs check path/to/project
 ./pd-docs report path/to/project
+./pd-docs check path/to/project
 ./pd-docs html path/to/project
 
 # Hash-based docs freshness check
@@ -71,13 +90,13 @@ git config diff.pd.command 'pddiff --git-difftool'
 echo '*.pd diff=pd' >> .gitattributes
 ```
 
-## Release Preparation Checklist
+## Release Checklist
 
 1. Validate changed patches: `./pd2ir --validate path/to/changed_patch.pd`
 2. Review semantic patch diffs: `./pddiff --summary path/to/changed_patch.pd`
-3. Update/check docs status: `./pd-docs report path/to/project`
+3. Review docs drift: `./pd-docs report path/to/project`
 4. Run test suite: `make test`
-5. Build distribution artifacts: `python -m build`
+5. Build artifacts: `python -m build`
 
 ## Current Limitations
 
@@ -88,7 +107,7 @@ echo '*.pd diff=pd' >> .gitattributes
 
 ## Upstream References
 
-This fork inherits the following references from upstream `pdpy`, and keeps them here for attribution and historical context:
+This fork inherits the following references from upstream `pdpy` for attribution and historical context:
 
 - Pure Data to XML: see [this discussion](https://lists.puredata.info/pipermail/pd-dev/2004-12/003316.html) on the pd-list archives.
 - Pure Data to JSON: see [this other one](https://lists.puredata.info/pipermail/pd-dev/2012-06/018434.html) on the pd-list archives.
