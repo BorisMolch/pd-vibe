@@ -2,6 +2,11 @@
 
 ## 2026-02-15
 
+### CLI Integration
+
+- Folded docs drift checks into `pd-docs` via new `pd-docs drift` subcommand.
+- Kept `check_docs.py` as a compatibility wrapper that forwards to `pd-docs drift`.
+
 ### Fork Baseline Transparency
 
 Baseline comparison: `37dd744` (fork baseline) -> current branch.

@@ -8,6 +8,7 @@ Uses content hashing to detect when docs need updating.
 Usage:
     pd-docs init <project-dir>     # Generate initial documentation
     pd-docs check [project-dir]    # Check for stale/broken refs
+    pd-docs drift [path]           # Check docs drift (hash/timestamp)
     pd-docs update <file.pd>       # Update docs for changed file
     pd-docs graph [project-dir]    # Show dependency graph
 """
@@ -16,10 +17,12 @@ import sys
 import json
 import hashlib
 import argparse
+import re
 from pathlib import Path
 from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from collections import defaultdict
 
 # Add pdpy to path
 script_dir = Path(__file__).parent.resolve()
@@ -1075,6 +1078,218 @@ def cmd_html(args):
     return 0
 
 
+
+def _drift_compute_node_hash(node: dict, edges_out: List[dict]) -> str:
+    """Compute node hash for drift checks (supports multiple IR edge formats)."""
+    connections = []
+    for edge in edges_out:
+        if 'from' in edge and 'to' in edge:
+            # New format: {from: {node, outlet}, to: {node, inlet}}
+            connections.append((
+                edge.get('from', {}).get('outlet', 0),
+                edge.get('to', {}).get('node', ''),
+                edge.get('to', {}).get('inlet', 0),
+            ))
+        elif 'source' in edge and 'target' in edge:
+            # Legacy format: {source, source_port, target, target_port}
+            connections.append((
+                edge.get('source_port', 0),
+                edge.get('target', ''),
+                edge.get('target_port', 0),
+            ))
+
+    content = {
+        'type': node.get('type', ''),
+        'args': node.get('args', []),
+        'connections': sorted(connections),
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def _drift_load_refs(project_dir: Path) -> dict:
+    """Load refs.json as raw dict data for hash drift checks."""
+    refs_path = project_dir / '.pd-docs' / 'refs.json'
+    if not refs_path.exists():
+        return {}
+    with open(refs_path) as f:
+        return json.load(f)
+
+
+def _drift_parse_patch_for_hashes(pd_path: Path) -> dict:
+    """Parse one patch and return hashes keyed by stable ref keys."""
+    try:
+        raw = loadPdFile(str(pd_path))
+        pd_lines = parsePdFileLines(raw)
+        pdpy = PdPy(name=pd_path.stem, pd_lines=pd_lines)
+        ir = pdpy.to_ir(patch_path=str(pd_path))
+        ir_data = ir.to_dict()
+
+        node_hashes = {}
+        patch_name = pd_path.stem
+
+        edges_by_source = defaultdict(list)
+        for edge in ir_data.get('edges', []):
+            if 'from' in edge and isinstance(edge.get('from'), dict):
+                source_id = edge['from'].get('node', '')
+            else:
+                source_id = edge.get('source', '')
+            edges_by_source[source_id].append(edge)
+
+        for node in ir_data.get('nodes', []):
+            node_id = node.get('id', '')
+            layout = node.get('layout') or {}
+            x = layout.get('x', node.get('x', 0))
+            y = layout.get('y', node.get('y', 0))
+            canvas = node.get('canvas', 'c0')
+
+            edges_out = edges_by_source.get(node_id, [])
+            node_hash = _drift_compute_node_hash(node, edges_out)
+
+            key = f"{patch_name}::{canvas}@{x},{y}"
+            node_hashes[key] = {
+                'hash': node_hash,
+                'type': node.get('type', ''),
+                'node_id': node_id,
+            }
+
+        return node_hashes
+
+    except Exception as e:
+        return {'_error': str(e)}
+
+
+def _drift_check_with_hashes(project_dir: Path, verbose: bool = False) -> int:
+    """Check docs drift using refs.json hash comparison."""
+    refs = _drift_load_refs(project_dir)
+    if not refs:
+        print(f"No .pd-docs/refs.json found in {project_dir}")
+        print("Run: pd-docs init <project> first, or use --timestamp for docs-only mode")
+        return 1
+
+    patches = defaultdict(list)
+    for ref_key, ref_data in refs.items():
+        patches[ref_data['patch']].append((ref_key, ref_data))
+
+    stale_patches = {}
+    ok_count = 0
+    missing_patches = []
+
+    for patch_path, ref_list in patches.items():
+        pd_path = Path(patch_path)
+        if not pd_path.exists():
+            doc_file = ref_list[0][1].get('doc_file', 'unknown')
+            missing_patches.append((doc_file, patch_path))
+            continue
+
+        current_hashes = _drift_parse_patch_for_hashes(pd_path)
+        if '_error' in current_hashes:
+            if verbose:
+                print(f"  Error parsing {pd_path.name}: {current_hashes['_error']}")
+            continue
+
+        changed_nodes = []
+        for ref_key, ref_data in ref_list:
+            if ref_key in current_hashes:
+                if current_hashes[ref_key]['hash'] != ref_data['hash']:
+                    changed_nodes.append({
+                        'type': ref_data['obj_type'],
+                        'old_hash': ref_data['hash'],
+                        'new_hash': current_hashes[ref_key]['hash'],
+                    })
+
+        if changed_nodes:
+            doc_file = ref_list[0][1].get('doc_file', 'unknown')
+            stale_patches[doc_file] = {
+                'patch': pd_path.name,
+                'changed': changed_nodes,
+            }
+        else:
+            ok_count += 1
+
+    print(f"\nDocumentation Drift (hash-based): {project_dir}")
+    print("=" * 60)
+
+    if stale_patches:
+        print(f"\nSTALE ({len(stale_patches)} docs - content changed):")
+        for doc_file, info in stale_patches.items():
+            print(f"  {doc_file} ({info['patch']})")
+            if verbose:
+                for node in info['changed'][:5]:
+                    print(f"    - {node['type']}: {node['old_hash']} -> {node['new_hash']}")
+                if len(info['changed']) > 5:
+                    print(f"    ... and {len(info['changed']) - 5} more")
+
+    if missing_patches:
+        print(f"\nMISSING SOURCE ({len(missing_patches)} patches):")
+        for doc_file, patch_path in missing_patches:
+            print(f"  {doc_file} -> {patch_path}")
+
+    print(f"\nOK: {ok_count} docs up-to-date")
+
+    return len(stale_patches) + len(missing_patches)
+
+
+def _drift_check_with_timestamps(docs_dir: Path, verbose: bool = False) -> int:
+    """Fallback drift check using timestamps only."""
+    stale = []
+    ok = []
+    missing = []
+
+    for md_file in docs_dir.glob("*.md"):
+        content = md_file.read_text()
+        match = re.search(r'<!-- pd-docs: (.+?) -->', content)
+        if not match:
+            continue
+
+        pd_path = Path(match.group(1))
+        if not pd_path.exists():
+            missing.append((md_file.name, str(pd_path)))
+            continue
+
+        doc_mtime = md_file.stat().st_mtime
+        pd_mtime = pd_path.stat().st_mtime
+
+        if pd_mtime > doc_mtime:
+            stale.append((
+                md_file.name,
+                pd_path.name,
+                datetime.fromtimestamp(pd_mtime),
+                datetime.fromtimestamp(doc_mtime),
+            ))
+        else:
+            ok.append(md_file.name)
+
+    print(f"\nDocumentation Drift (timestamp-based): {docs_dir}")
+    print("=" * 60)
+
+    if stale:
+        print(f"\nSTALE ({len(stale)} files - source newer):")
+        for doc_name, src_name, pd_time, doc_time in stale:
+            print(f"  {doc_name}")
+            if verbose:
+                print(f"    Source: {src_name}")
+                print(f"    Patch modified: {pd_time}")
+                print(f"    Doc modified:   {doc_time}")
+
+    if missing:
+        print(f"\nMISSING SOURCE ({len(missing)} files):")
+        for doc_name, src in missing:
+            print(f"  {doc_name} -> {src}")
+
+    print(f"\nOK: {len(ok)} files up-to-date")
+    return len(stale) + len(missing)
+
+
+def cmd_drift(args):
+    """Run documentation drift checks (hash mode or timestamp mode)."""
+    target = Path(args.path or '.').resolve()
+
+    if args.timestamp:
+        issues = _drift_check_with_timestamps(target, args.verbose)
+    else:
+        issues = _drift_check_with_hashes(target, args.verbose)
+
+    return 1 if issues > 0 else 0
 def main():
     parser = argparse.ArgumentParser(
         description="Living documentation system for Pure Data projects",
@@ -1083,6 +1298,8 @@ def main():
 Examples:
     pd-docs init myproject/        # Generate initial docs
     pd-docs check                  # Find stale references
+    pd-docs drift .                # Hash-based docs drift check
+    pd-docs drift docs/ -t        # Timestamp-only drift check
     pd-docs report                 # LLM-friendly report of what needs updating
     pd-docs update synth.pd        # Update refs after editing
     pd-docs graph                  # Show dependency tree
@@ -1099,6 +1316,15 @@ Examples:
     # check
     p_check = subparsers.add_parser('check', help='Check for stale refs')
     p_check.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
+
+    # drift
+    p_drift = subparsers.add_parser('drift', help='Check docs drift (hash or timestamp mode)')
+    p_drift.add_argument('path', nargs='?', default='.',
+                         help='Project directory (hash mode) or docs directory (timestamp mode)')
+    p_drift.add_argument('-t', '--timestamp', action='store_true',
+                         help='Timestamp-only mode (path should be docs directory)')
+    p_drift.add_argument('-v', '--verbose', action='store_true',
+                         help='Verbose output')
 
     # report
     p_report = subparsers.add_parser('report', help='LLM-friendly report of changes')
@@ -1121,6 +1347,7 @@ Examples:
     commands = {
         'init': cmd_init,
         'check': cmd_check,
+        'drift': cmd_drift,
         'report': cmd_report,
         'graph': cmd_graph,
         'update': cmd_update,

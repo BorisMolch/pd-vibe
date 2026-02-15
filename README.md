@@ -9,8 +9,8 @@
 - `pd2ir`: convert `.pd` patches into machine-friendly IR JSON + human-friendly DSL.
 - `pdpatch`: safe CLI editing for `.pd` files while preserving file structure.
 - `pddiff`: semantic diffs for patches (more useful than raw line diffs).
-- `pd-docs`: living docs pipeline (`init`, `check`, `report`, `update`, `html`).
-- `check_docs.py`: hash-based stale-doc detection for CI and local checks.
+- `pd-docs`: living docs pipeline (`init`, `check`, `drift`, `report`, `update`, `html`).
+- `pd-docs drift`: hash-based stale-doc detection for CI and local checks.
 
 ## What Comes From pdpy vs What Is New
 
@@ -20,7 +20,7 @@ Reused from upstream `pdpy`:
 - Most of the existing `pdpy_lib` module structure and behavior
 
 New in `pd-vibe`:
-- New CLIs: `pdpatch`, `pddiff`, `pd-docs`, `check_docs.py`
+- New CLIs: `pdpatch`, `pddiff`, `pd-docs` (including `drift` for hash/timestamp checks)
 - Extended `pd2ir` capabilities (`--indices`, `--annotate`, `--doc`, `--doc-json`, `--state`, `--screenshot`)
 - New/extended IR modules in `pdpy_lib/ir` (`docgen`, `state`, `screenshot`, `visualize`, plus DSL/registry/build improvements)
 - Additional parser/compatibility fix in `pdpy_lib/objects/obj.py`
@@ -85,7 +85,9 @@ pip install pd-vibe
 ./pd-docs html path/to/project
 
 # Hash-based docs freshness check
-python check_docs.py path/to/project
+./pd-docs drift path/to/project
+# Timestamp-only fallback check
+./pd-docs drift path/to/docs -t
 ```
 
 Git difftool setup for `.pd` files:
@@ -99,16 +101,18 @@ echo '*.pd diff=pd' >> .gitattributes
 
 1. Validate changed patches: `./pd2ir --validate path/to/changed_patch.pd`
 2. Review semantic patch diffs: `./pddiff --summary path/to/changed_patch.pd`
-3. Review docs drift: `./pd-docs report path/to/project`
-4. Run test suite: `make test`
-5. Build artifacts: `python -m build`
+3. Check docs drift: `./pd-docs drift path/to/project`
+4. Review docs update report: `./pd-docs report path/to/project`
+5. Run test suite: `make test`
+6. Build artifacts: `python -m build`
 
 ## Current Limitations
 
 - `pdpatch delete` is not implemented yet.
 - `pdpatch add` currently targets root canvas only.
 - `pd2ir --screenshot` is macOS-only and requires Pd GUI availability.
-- `pd-docs check/report/update` require `.pd-docs/refs.json` (created by `pd-docs init`).
+- `pd-docs check/report/update/drift` require `.pd-docs/refs.json` (created by `pd-docs init`) for hash-based checks.
+- `check_docs.py` is kept as a compatibility wrapper and forwards to `pd-docs drift`.
 
 ## License
 
