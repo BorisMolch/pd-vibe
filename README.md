@@ -99,7 +99,7 @@ This fork inherits the following references from upstream `pdpy`, and keeps them
 
 ## Copyright
 
-- `pdpy` (upstream fork base): Copyright (C) 2021-2022 Fede Camara Halac and contributors
+- [pdpy](https://github.com/pdpy-org/pdpy) (upstream fork base): Copyright (C) 2021-2022 Fede Camara Halac and contributors
 - [libpd](https://github.com/libpd/libpd): Copyright (c) Peter Brinkmann & the libpd team 2010-2021
 - [Pure Data](https://github.com/pure-data/pure-data): Copyright (c) 1997-2021 Miller Puckette and others.
 - [pyaudio](https://people.csail.mit.edu/hubert/pyaudio): Copyright (c) 2006 Hubert Pham
