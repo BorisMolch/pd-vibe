@@ -81,16 +81,16 @@ pip install pd-vibe
 # Semantic diff
 ./pddiff my_patch.pd
 
-# Docs workflow
+# Docs workflow (skeleton -> fill -> validate)
 ./pd-docs init path/to/project
+# Fill docs/*.md placeholders with your LLM (or manually)
 ./pd-docs report path/to/project
+./pd-docs update path/to/changed_patch.pd
 ./pd-docs check path/to/project
-./pd-docs html path/to/project
-
-# Hash-based docs freshness check
 ./pd-docs drift path/to/project
 # Timestamp-only fallback check
 ./pd-docs drift path/to/docs -t
+./pd-docs html path/to/project
 ```
 
 Git difftool setup for `.pd` files:

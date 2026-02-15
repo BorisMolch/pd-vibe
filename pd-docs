@@ -466,8 +466,10 @@ def cmd_init(args):
     print(f"  Docs: {docs_dir}")
     print(f"  Refs: {refs_file}")
     print(f"\nNext steps:")
-    print(f"  1. Edit docs/*.md to add descriptions")
-    print(f"  2. Run 'pd-docs check' after code changes")
+    print(f"  1. Fill placeholders in docs/*.md (manually or with your LLM).")
+    print(f"  2. Run 'pd-docs report' to find remaining placeholders/stale refs.")
+    print(f"  3. Run 'pd-docs update <changed-file.pd>' after patch edits.")
+    print(f"  4. Run 'pd-docs drift <project>' in CI/local checks.")
 
     return 0
 
@@ -1290,18 +1292,20 @@ def cmd_drift(args):
         issues = _drift_check_with_hashes(target, args.verbose)
 
     return 1 if issues > 0 else 0
+
 def main():
     parser = argparse.ArgumentParser(
         description="Living documentation system for Pure Data projects",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    pd-docs init myproject/        # Generate initial docs
-    pd-docs check                  # Find stale references
+    pd-docs init myproject/        # Generate skeleton docs with placeholders
+    # Fill docs/*.md with your LLM or manually
+    pd-docs report                 # Find remaining placeholders/stale refs
+    pd-docs update synth.pd        # Refresh refs after editing patch
+    pd-docs check                  # Check for stale/broken refs
     pd-docs drift .                # Hash-based docs drift check
     pd-docs drift docs/ -t        # Timestamp-only drift check
-    pd-docs report                 # LLM-friendly report of what needs updating
-    pd-docs update synth.pd        # Update refs after editing
     pd-docs graph                  # Show dependency tree
     pd-docs html                   # Generate HTML coverage report
         """
@@ -1310,7 +1314,7 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # init
-    p_init = subparsers.add_parser('init', help='Initialize documentation')
+    p_init = subparsers.add_parser('init', help='Initialize skeleton docs with LLM placeholders')
     p_init.add_argument('project_dir', help='Project directory')
 
     # check
