@@ -86,9 +86,9 @@ echo '*.pd diff=pd' >> .gitattributes
 - `pd2ir --screenshot` is macOS-only and requires Pd GUI availability.
 - `pd-docs check/report/update` require `.pd-docs/refs.json` (created by `pd-docs init`).
 
-## References
+## Upstream References
 
-This project is inspired by many discussions and projects:
+This fork inherits the following references from upstream `pdpy`, and keeps them here for attribution and historical context:
 
 - Pure Data to XML: see [this discussion](https://lists.puredata.info/pipermail/pd-dev/2004-12/003316.html) on the pd-list archives.
 - Pure Data to JSON: see [this other one](https://lists.puredata.info/pipermail/pd-dev/2012-06/018434.html) on the pd-list archives.
@@ -99,6 +99,7 @@ This project is inspired by many discussions and projects:
 
 ## Copyright
 
+- `pdpy` (upstream fork base): Copyright (C) 2021-2022 Fede Camara Halac and contributors
 - [libpd](https://github.com/libpd/libpd): Copyright (c) Peter Brinkmann & the libpd team 2010-2021
 - [Pure Data](https://github.com/pure-data/pure-data): Copyright (c) 1997-2021 Miller Puckette and others.
 - [pyaudio](https://people.csail.mit.edu/hubert/pyaudio): Copyright (c) 2006 Hubert Pham
