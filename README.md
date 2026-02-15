@@ -6,11 +6,14 @@
 
 ## Feature Highlights
 
-- `pd2ir`: convert `.pd` patches into machine-friendly IR JSON + human-friendly DSL.
+- `pd2ir`: IR/DSL conversion plus `--indices`, `--annotate`, and `--state` analysis for fast patch understanding.
+- `pd2ir --doc` / `--doc-json`: generate patch documentation artifacts from IR.
+- `pd2ir --watch`: auto-convert changed `.pd` files during iteration.
+- `pd2ir --screenshot`: Pd-rendered PNG screenshots of patches (macOS).
 - `pdpatch`: safe CLI editing for `.pd` files while preserving file structure.
-- `pddiff`: semantic diffs for patches (more useful than raw line diffs).
-- `pd-docs`: living docs pipeline (`init`, `check`, `drift`, `report`, `update`, `html`).
-- `pd-docs drift`: hash-based stale-doc detection for CI and local checks.
+- `pddiff`: semantic diffs for patches, with Git difftool integration.
+- `pd-docs`: living docs pipeline (`init`, `check`, `drift`, `report`, `update`, `html`) with coverage reporting.
+- `pd-docs drift`: hash-based (or `-t` timestamp) stale-doc detection for CI/local checks.
 
 ## What Comes From pdpy vs What Is New
 
