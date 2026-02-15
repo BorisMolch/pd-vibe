@@ -14,8 +14,6 @@
 
 ## What Comes From pdpy vs What Is New
 
-`pd-vibe` is a real fork, not a rewrite.
-
 Reused from upstream `pdpy`:
 - Core parser/object model via `pdpy_lib.patching.pdpy.PdPy`
 - File loading/parsing helpers in `pdpy_lib.utilities.utils`
