@@ -2,6 +2,8 @@
 
 `pd-vibe` is a fork of [`pdpy`](https://github.com/pdpy-org/pdpy) focused on vibe-coding workflows for Pure Data patches.
 
+`pd-vibe` builds on the excellent `pdpy` project by Fede Camara Halac and contributors.
+
 ## Feature Highlights
 
 - `pd2ir`: convert `.pd` patches into machine-friendly IR JSON + human-friendly DSL.
@@ -25,9 +27,7 @@ New in `pd-vibe`:
 - New/extended IR modules in `pdpy_lib/ir` (`docgen`, `state`, `screenshot`, `visualize`, plus DSL/registry/build improvements)
 - Additional parser/compatibility fix in `pdpy_lib/objects/obj.py`
 
-Current code split from fork baseline (`37dd744`) to current:
-- CLI/tooling layer: `+2339` insertions across `pd2ir`, `pdpatch`, `pddiff`, `pd-docs`, `check_docs.py`
-- `pdpy_lib` internals: `+2500 / -104` lines changed
+Detailed code-change metrics are tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 Compatibility note:
 
@@ -35,7 +35,14 @@ Compatibility note:
 import pdpy_lib as pdpy
 ```
 
-The internal import path is still `pdpy_lib` for compatibility.
+The internal import path remains `pdpy_lib` for compatibility.
+A future major release may introduce a `pd_vibe_lib` namespace migration.
+
+## Upstream Policy
+
+- `pd-vibe` is not positioned as a replacement for `pdpy`; it has a different product focus.
+- General bug fixes and parser improvements should be upstreamed when feasible.
+- Product-specific tooling workflows remain in this repository.
 
 ## Installation
 
@@ -104,6 +111,12 @@ echo '*.pd diff=pd' >> .gitattributes
 - `pdpatch add` currently targets root canvas only.
 - `pd2ir --screenshot` is macOS-only and requires Pd GUI availability.
 - `pd-docs check/report/update` require `.pd-docs/refs.json` (created by `pd-docs init`).
+
+## License
+
+- `pd-vibe` is distributed under GPL terms (see [`LICENSE`](LICENSE)).
+- Upstream attribution and copyright notices are preserved.
+- Source for fork modifications is provided in this repository.
 
 ## Upstream References
 
