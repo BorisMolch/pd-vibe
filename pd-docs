@@ -75,14 +75,28 @@ class PatchInfo:
 
 
 def compute_node_hash(node: dict, edges_out: List[dict]) -> str:
-    """Compute content hash for a node (type + args + connections)."""
+    """Compute content hash for a node (supports legacy + new IR edge formats)."""
+    connections = []
+    for edge in edges_out:
+        if 'from' in edge and 'to' in edge:
+            # New format: {from: {node, outlet}, to: {node, inlet}}
+            connections.append((
+                edge.get('from', {}).get('outlet', 0),
+                edge.get('to', {}).get('node', ''),
+                edge.get('to', {}).get('inlet', 0),
+            ))
+        elif 'source' in edge and 'target' in edge:
+            # Legacy format: {source, source_port, target, target_port}
+            connections.append((
+                edge.get('source_port', 0),
+                edge.get('target', ''),
+                edge.get('target_port', 0),
+            ))
+
     content = {
         'type': node.get('type', ''),
         'args': node.get('args', []),
-        'connections': sorted([
-            f"{e['target']}:{e.get('target_port', 0)}"
-            for e in edges_out
-        ])
+        'connections': sorted(connections),
     }
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:12]
 
@@ -156,8 +170,15 @@ def analyze_patch(pd_file: Path) -> Optional[PatchInfo]:
                 'index': len(outlets)
             })
         else:
-            # Get outgoing edges for this node
-            edges_out = [e for e in ir_data.get('edges', []) if e.get('source') == node.get('id')]
+            # Get outgoing edges for this node (supports legacy + new IR edge formats)
+            node_id = node.get('id')
+            edges_out = []
+            for e in ir_data.get('edges', []):
+                if 'from' in e and isinstance(e.get('from'), dict):
+                    if e['from'].get('node') == node_id:
+                        edges_out.append(e)
+                elif e.get('source') == node_id:
+                    edges_out.append(e)
 
             # Get position from layout
             layout = node.get('layout', {})
@@ -367,6 +388,40 @@ def load_refs(refs_file: Path) -> Dict[str, NodeRef]:
     return {k: NodeRef.from_dict(v) for k, v in data.items()}
 
 
+def _doc_fingerprint(doc_path: Path) -> str:
+    """Compute stable fingerprint for a markdown doc file."""
+    return hashlib.sha256(doc_path.read_bytes()).hexdigest()
+
+
+def _load_doc_state(pd_docs_dir: Path) -> dict:
+    """Load per-patch doc fingerprint state used for enforcement."""
+    state_file = pd_docs_dir / 'doc-state.json'
+    if not state_file.exists():
+        return {}
+    try:
+        return json.loads(state_file.read_text())
+    except Exception:
+        return {}
+
+
+def _save_doc_state(pd_docs_dir: Path, state: dict):
+    """Persist per-patch doc fingerprint state."""
+    state_file = pd_docs_dir / 'doc-state.json'
+    pd_docs_dir.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def _record_doc_state(pd_docs_dir: Path, patch_name: str, doc_file: str, doc_path: Path):
+    """Record latest reviewed doc fingerprint for a patch."""
+    state = _load_doc_state(pd_docs_dir)
+    state[patch_name] = {
+        'doc_file': doc_file,
+        'hash': _doc_fingerprint(doc_path),
+        'recorded_at': datetime.now().isoformat(),
+    }
+    _save_doc_state(pd_docs_dir, state)
+
+
 def build_refs_from_patches(patches: Dict[str, PatchInfo], docs_dir: Path) -> Dict[str, NodeRef]:
     """Build reference index from analyzed patches.
 
@@ -460,6 +515,20 @@ def cmd_init(args):
     refs_file = pd_docs_dir / 'refs.json'
     save_refs(refs, refs_file)
     print(f"\nSaved {len(refs)} node references to .pd-docs/refs.json")
+
+
+    # Save baseline doc fingerprints for enforcement in update workflow
+    doc_state = {}
+    for patch_name in patches:
+        doc_path = docs_dir / f"{patch_name}.md"
+        if doc_path.exists():
+            doc_state[patch_name] = {
+                'doc_file': f"{patch_name}.md",
+                'hash': _doc_fingerprint(doc_path),
+                'recorded_at': datetime.now().isoformat(),
+            }
+    _save_doc_state(pd_docs_dir, doc_state)
+    print(f"Saved {len(doc_state)} doc fingerprints to .pd-docs/doc-state.json")
 
     # Summary
     print(f"\n✓ Documentation initialized")
@@ -845,7 +914,7 @@ def cmd_graph(args):
 
 
 def cmd_update(args):
-    """Update docs for a specific file."""
+    """Update refs for a specific file, enforcing docs-first workflow."""
     pd_file = Path(args.file).resolve()
 
     if not pd_file.exists():
@@ -862,7 +931,8 @@ def cmd_update(args):
         print("Could not find .pd-docs directory. Run 'pd-docs init' first.", file=sys.stderr)
         return 1
 
-    refs_file = project_dir / '.pd-docs' / 'refs.json'
+    pd_docs_dir = project_dir / '.pd-docs'
+    refs_file = pd_docs_dir / 'refs.json'
     docs_dir = project_dir / 'docs'
 
     print(f"Updating docs for: {pd_file.name}")
@@ -871,6 +941,37 @@ def cmd_update(args):
     info = analyze_patch(pd_file)
     if not info:
         return 1
+
+    doc_file = f"{info.name}.md"
+    doc_path = docs_dir / doc_file
+    if not doc_path.exists():
+        print(f"ERROR: Missing documentation file: {doc_path}", file=sys.stderr)
+        print("Create/update the doc first, then run pd-docs update.", file=sys.stderr)
+        return 1
+
+    # Hard enforcement: do not refresh refs unless docs changed first.
+    current_doc_hash = _doc_fingerprint(doc_path)
+    doc_state = _load_doc_state(pd_docs_dir)
+    prev_doc_hash = (doc_state.get(info.name) or {}).get('hash')
+
+    if not args.force:
+        if prev_doc_hash is not None:
+            if current_doc_hash == prev_doc_hash:
+                print("ERROR: Refusing to update refs: documentation has not changed.", file=sys.stderr)
+                print(f"  Expected edits in: {doc_path}", file=sys.stderr)
+                print("  Workflow: edit docs -> pd-docs update <file.pd>", file=sys.stderr)
+                print("  Use --force only for exceptional cases.", file=sys.stderr)
+                return 1
+        else:
+            # Backward-compat bootstrap for older projects without doc-state.json
+            doc_mtime = doc_path.stat().st_mtime
+            pd_mtime = pd_file.stat().st_mtime
+            if doc_mtime < pd_mtime:
+                print("ERROR: Refusing to update refs: docs are older than patch.", file=sys.stderr)
+                print(f"  Patch: {pd_file.name}", file=sys.stderr)
+                print(f"  Doc:   {doc_file}", file=sys.stderr)
+                print("  Edit docs first (or use --force to bypass once).", file=sys.stderr)
+                return 1
 
     # Load existing refs
     refs = load_refs(refs_file)
@@ -896,7 +997,7 @@ def cmd_update(args):
             obj_type=node['type'],
             args=node['args'],
             connections_out=[],
-            doc_file=f"{info.name}.md",
+            doc_file=doc_file,
             doc_section="implementation",
             canvas=canvas,
             x=x,
@@ -906,8 +1007,11 @@ def cmd_update(args):
     # Save updated refs
     save_refs(refs, refs_file)
 
+    # Record doc fingerprint baseline that corresponds to these refs
+    _record_doc_state(pd_docs_dir, info.name, doc_file, doc_path)
+
     print(f"\n✓ Updated {updated} references")
-    print(f"  Note: Review {docs_dir / info.name}.md for accuracy")
+    print(f"  Enforced doc baseline recorded: {doc_file}")
 
     return 0
 
@@ -1082,30 +1186,8 @@ def cmd_html(args):
 
 
 def _drift_compute_node_hash(node: dict, edges_out: List[dict]) -> str:
-    """Compute node hash for drift checks (supports multiple IR edge formats)."""
-    connections = []
-    for edge in edges_out:
-        if 'from' in edge and 'to' in edge:
-            # New format: {from: {node, outlet}, to: {node, inlet}}
-            connections.append((
-                edge.get('from', {}).get('outlet', 0),
-                edge.get('to', {}).get('node', ''),
-                edge.get('to', {}).get('inlet', 0),
-            ))
-        elif 'source' in edge and 'target' in edge:
-            # Legacy format: {source, source_port, target, target_port}
-            connections.append((
-                edge.get('source_port', 0),
-                edge.get('target', ''),
-                edge.get('target_port', 0),
-            ))
-
-    content = {
-        'type': node.get('type', ''),
-        'args': node.get('args', []),
-        'connections': sorted(connections),
-    }
-    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:12]
+    """Backward-compat wrapper; keep drift/update hashing identical."""
+    return compute_node_hash(node, edges_out)
 
 
 def _drift_load_refs(project_dir: Path) -> dict:
@@ -1341,6 +1423,8 @@ Examples:
     # update
     p_update = subparsers.add_parser('update', help='Update docs for a file')
     p_update.add_argument('file', help='.pd file that changed')
+    p_update.add_argument('--force', action='store_true',
+                         help='Bypass docs-first enforcement (not recommended)')
 
     # html
     p_html = subparsers.add_parser('html', help='Generate HTML coverage report')
