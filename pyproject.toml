@@ -1,12 +1,12 @@
 [project]
-name = "pdpy-lib"
+name = "pd-vibe"
 version ="0.1.7"
 authors = [
   { name="Fede Camara Halac", email="fdch@nyu.edu" },
 ]
-description = "A Pure Data PYthon Utility"
+description = "Fork of pdpy for vibe-coding Pure Data patches"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 classifiers = [
     "Topic :: Multimedia",
     "Programming Language :: Python :: 3",
@@ -15,5 +15,6 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/pdpy-org/pdpy"
-"Bug Tracker" = "https://github.com/pdpy-org/pdpy/issues"
+"Homepage" = "https://github.com/BorisMolch/pd-vibe"
+"Bug Tracker" = "https://github.com/BorisMolch/pd-vibe/issues"
+"Upstream" = "https://github.com/pdpy-org/pdpy"

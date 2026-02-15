@@ -13,7 +13,7 @@ build:
 	python -m build
 
 activate:
-	source ~/.pdpy/bin/activate
+	source ~/.pd-vibe/bin/activate
 
 deploy:
 	python -m twine upload --repository testpypi dist/*
