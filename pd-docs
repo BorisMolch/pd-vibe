@@ -9,7 +9,7 @@ Usage:
     pd-docs init <project-dir>     # Generate initial documentation
     pd-docs check [project-dir]    # Check for stale/broken refs
     pd-docs drift [path]           # Check docs drift (hash/timestamp)
-    pd-docs update <file.pd>       # Update docs for changed file
+    pd-docs update <file.pd>       # Refresh refs after editing docs for a changed patch
     pd-docs graph [project-dir]    # Show dependency graph
 """
 
@@ -1384,7 +1384,7 @@ Examples:
     pd-docs init myproject/        # Generate skeleton docs with placeholders
     # Fill docs/*.md with your LLM or manually
     pd-docs report                 # Find remaining placeholders/stale refs
-    pd-docs update synth.pd        # Refresh refs after editing patch
+    pd-docs update synth.pd        # Refresh refs after editing docs for that patch
     pd-docs check                  # Check for stale/broken refs
     pd-docs drift .                # Hash-based docs drift check
     pd-docs drift docs/ -t        # Timestamp-only drift check
@@ -1421,7 +1421,10 @@ Examples:
     p_graph.add_argument('project_dir', nargs='?', help='Project directory (default: current)')
 
     # update
-    p_update = subparsers.add_parser('update', help='Update docs for a file')
+    p_update = subparsers.add_parser(
+        'update',
+        help='Refresh refs for a file (docs must be edited first)'
+    )
     p_update.add_argument('file', help='.pd file that changed')
     p_update.add_argument('--force', action='store_true',
                          help='Bypass docs-first enforcement (not recommended)')
